@@ -1,6 +1,12 @@
 # ModelBatch Consistency Issue Demo
 
-This demo reproduces the consistency issue where ModelBatch training with different learning rates doesn't match sequential training results.
+This demo originally reproduced an issue where ModelBatch training with different
+learning rates diverged from sequential training. The root cause turned out to be
+stacked parameter gradients accumulating between steps. ModelBatch now exposes a
+`zero_grad()` method and the factory wired `optimizer.zero_grad()` to clear those
+gradients automatically. With seeds reset before creating the second set of models
+(`torch.manual_seed(42)` and `np.random.seed(42)`), the quick test shows identical
+results.
 
 ## Problem Description
 

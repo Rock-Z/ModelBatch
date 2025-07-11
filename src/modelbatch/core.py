@@ -64,6 +64,14 @@ class ModelBatch(nn.Module):
         # Enable/disable compilation
         self._compiled = False
 
+    def zero_grad(self, set_to_none: bool = True) -> None:
+        """Clear gradients for all stacked parameters."""
+        for param in self.stacked_params.values():
+            if set_to_none:
+                param.grad = None
+            elif param.grad is not None:
+                param.grad.zero_()
+
     def _verify_model_compatibility(self, models: List[nn.Module]) -> None:
         """Verify all models have identical structure."""
         if len(models) < 2:
@@ -170,8 +178,10 @@ class ModelBatch(nn.Module):
             Combined loss (scalar) or per-model losses [num_models]
         """
         # Check if targets need to be broadcast to all models
-        expected_batch_size = outputs.shape[1] if outputs.dim() >= 2 else outputs.shape[0]
-        
+        expected_batch_size = (
+            outputs.shape[1] if outputs.dim() >= 2 else outputs.shape[0]
+        )
+
         # If targets is 1D or 2D but doesn't have the right shape for per-model targets
         if targets.dim() == 1:
             # Always broadcast 1D targets to all models
@@ -179,10 +189,12 @@ class ModelBatch(nn.Module):
                 targets = targets.unsqueeze(0).expand(self.num_models, -1)
             else:
                 raise ValueError(
-                    f"1D target shape {targets.shape} doesn't match batch size {expected_batch_size}"
+                    f"1D target shape {targets.shape} doesn't match batch size {expected_batch_size}",
                 )
-        elif (targets.dim() >= 2 and 
-              not (targets.shape[0] == self.num_models and targets.shape[1] == expected_batch_size)):
+        elif targets.dim() >= 2 and not (
+            targets.shape[0] == self.num_models
+            and targets.shape[1] == expected_batch_size
+        ):
             # For multi-dimensional targets, only skip broadcasting if they're already in [num_models, batch_size, ...] format
             if targets.shape[0] == expected_batch_size:
                 targets = targets.unsqueeze(0).expand(
@@ -194,7 +206,7 @@ class ModelBatch(nn.Module):
                 raise ValueError(
                     f"Target shape {targets.shape} doesn't match expected format. "
                     f"Expected either [batch_size={expected_batch_size}, ...] for shared targets "
-                    f"or [num_models={self.num_models}, batch_size={expected_batch_size}, ...] for per-model targets."
+                    f"or [num_models={self.num_models}, batch_size={expected_batch_size}, ...] for per-model targets.",
                 )
 
         # Compute loss for each model
