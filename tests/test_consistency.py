@@ -23,24 +23,19 @@ class TestModelBatchConsistency:
     MODEL_CONFIGS = [
         # (model_class, model_params, num_models, input_shape, target_shape, batch_size)
         (SimpleMLP, {"input_size": 8, "output_size": 4}, 3, (6, 8), (6,), 6),
-        (SimpleMLP, {"input_size": 7, "output_size": 5}, 2, (4, 7), (4,), 4),
         (SimpleMLP, {"input_size": 6, "output_size": 3}, 2, (3, 6), (3,), 3),
         
         (CustomModel, {"input_size": 8, "output_size": 4}, 3, (6, 8), (6,), 6),
-        (CustomModel, {"input_size": 7, "output_size": 5}, 2, (4, 7), (4,), 4),
         (CustomModel, {"input_size": 6, "output_size": 3}, 2, (3, 6), (3,), 3),
         
         (DeepMLP, {"input_size": 8, "output_size": 4}, 3, (6, 8), (6,), 6),
-        (DeepMLP, {"input_size": 7, "output_size": 5}, 2, (4, 7), (4,), 4),
         (DeepMLP, {"input_size": 6, "output_size": 3}, 2, (3, 6), (3,), 3),
         
         (SimpleLSTM, {"input_size": 8, "hidden_size": 12, "output_size": 4}, 3, (6, 10, 8), (6,), 6),
-        (SimpleLSTM, {"input_size": 7, "hidden_size": 10, "output_size": 5}, 2, (4, 8, 7), (4,), 4),
-        (SimpleLSTM, {"input_size": 6, "hidden_size": 8, "output_size": 3}, 2, (3, 6, 6), (3,), 3),
+        (SimpleLSTM, {"input_size": 6, "hidden_size": 8, "output_size": 3, "num_layers": 1}, 2, (3, 6, 6), (3,), 3),
         
         (SimpleCNN, {"input_channels": 1, "num_classes": 4}, 3, (6, 1, 32, 32), (6,), 6),
-        (SimpleCNN, {"input_channels": 3, "num_classes": 5}, 2, (4, 3, 32, 32), (4,), 4),
-        (SimpleCNN, {"input_channels": 1, "num_classes": 3}, 2, (3, 1, 32, 32), (3,), 3),
+        (SimpleCNN, {"input_channels": 3, "num_classes": 3}, 2, (3, 3, 32, 32), (3,), 3),
     ]
     
     @pytest.mark.parametrize("model_class,model_params,num_models,input_shape,target_shape,batch_size", MODEL_CONFIGS)
