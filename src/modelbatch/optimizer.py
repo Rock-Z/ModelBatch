@@ -38,28 +38,111 @@ class OptimizerFactory:
         configs: List[Dict[str, Any]],
     ) -> Optimizer:
         """
-        Create optimizer for the stacked parameters.
+        Create optimizer for the stacked parameters with per-model parameter groups.
         
         Args:
             model_batch: The ModelBatch instance 
-            configs: List of config dicts, one per model (will use first config as base)
+            configs: List of config dicts, one per model
             
         Returns:
-            Configured optimizer for the stacked parameters
+            Configured optimizer with separate parameter groups for each model
         """
         if len(configs) != model_batch.num_models:
             raise ValueError(
                 f"Expected {model_batch.num_models} configs, got {len(configs)}",
             )
         
-        # For now, use the first config as the base configuration
-        # TODO: Support heterogeneous per-model configs in the future
-        base_config = {**self.base_config, **configs[0]}
+        # Create parameter groups for each model
+        param_groups = []
         
-        # Create single parameter group with all stacked parameters
-        stacked_params = list(model_batch.stacked_params.values())
+        # We need to create separate leaf Parameter objects for each model
+        # These will be copies of the stacked parameter slices
+        model_parameters = {}  # model_idx -> {param_name -> Parameter}
         
-        return self.optimizer_cls(stacked_params, **base_config)
+        for model_idx in range(model_batch.num_models):
+            # Merge base config with model-specific config
+            model_config = {**self.base_config, **configs[model_idx]}
+            
+            # Create separate Parameter objects for this model
+            model_params = []
+            model_parameters[model_idx] = {}
+            
+            for param_name, stacked_param in model_batch.stacked_params.items():
+                # Create a new Parameter object that's a copy of the slice
+                # This will be a leaf tensor that the optimizer can work with
+                param_data = stacked_param[model_idx].clone().detach()
+                model_param = torch.nn.Parameter(param_data)
+                
+                # Store the mapping for gradient synchronization
+                model_param._stacked_parent = stacked_param  # type: ignore
+                model_param._model_index = model_idx  # type: ignore
+                model_param._param_name = param_name  # type: ignore
+                
+                model_params.append(model_param)
+                model_parameters[model_idx][param_name] = model_param
+            
+            # Create parameter group for this model
+            param_group = {
+                'params': model_params,
+                **model_config
+            }
+            param_groups.append(param_group)
+        
+        # Create the optimizer
+        optimizer = self.optimizer_cls(param_groups, **self.base_config)
+        
+        # Store references for custom step logic
+        optimizer._model_batch = model_batch  # type: ignore
+        optimizer._model_parameters = model_parameters  # type: ignore
+        
+        # Replace the step method with our custom implementation
+        original_step = optimizer.step
+        
+        def custom_step(closure=None):
+            # First, sync gradients from stacked parameters to individual parameters
+            self._sync_gradients_to_individual(model_batch, model_parameters)
+            
+            # Perform the normal optimizer step
+            result = original_step(closure)
+            
+            # Sync the updated parameters back to stacked parameters
+            self._sync_parameters_to_stacked(model_batch, model_parameters)
+            
+            return result
+        
+        optimizer.step = custom_step  # type: ignore
+        
+        return optimizer
+    
+    def _sync_gradients_to_individual(
+        self, 
+        model_batch: "ModelBatch", 
+        model_parameters: Dict[int, Dict[str, torch.nn.Parameter]]
+    ) -> None:
+        """Sync gradients from stacked parameters to individual model parameters."""
+        for model_idx in range(model_batch.num_models):
+            for param_name, stacked_param in model_batch.stacked_params.items():
+                individual_param = model_parameters[model_idx][param_name]
+                
+                if stacked_param.grad is not None:
+                    # Copy the gradient slice to the individual parameter
+                    individual_param.grad = stacked_param.grad[model_idx].clone()
+                else:
+                    individual_param.grad = None
+    
+    def _sync_parameters_to_stacked(
+        self, 
+        model_batch: "ModelBatch", 
+        model_parameters: Dict[int, Dict[str, torch.nn.Parameter]]
+    ) -> None:
+        """Sync updated individual parameters back to stacked parameters."""
+        for model_idx in range(model_batch.num_models):
+            for param_name, stacked_param in model_batch.stacked_params.items():
+                individual_param = model_parameters[model_idx][param_name]
+                
+                # Copy the updated parameter data back to the stacked parameter
+                with torch.no_grad():
+                    stacked_param[model_idx].copy_(individual_param)
     
     def create_lr_scheduler(
         self,

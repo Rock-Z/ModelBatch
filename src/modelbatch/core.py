@@ -155,7 +155,7 @@ class ModelBatch(nn.Module):
         outputs: torch.Tensor,
         targets: torch.Tensor,
         loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
-        reduction: str = "mean",
+        reduction: str = "sum",
     ) -> torch.Tensor:
         """
         Compute loss for all models.
