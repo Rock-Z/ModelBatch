@@ -160,12 +160,18 @@ class NaNCallback(Callback):
             stacked_param[model_idx].requires_grad_(False)
     
     def _reset_model(self, model_batch: "ModelBatch", model_idx: int) -> None:
-        """Reset a model to its initial state."""
-        # This is a simplified reset - would need access to initial state
-        for param_name, stacked_param in model_batch.stacked_params.items():
-            with torch.no_grad():
-                # Reinitialize with small random values
-                stacked_param[model_idx].normal_(0, 0.01)
+        """Reset a model to its initial state using its own method if available."""
+        model = model_batch.models[model_idx]
+        if hasattr(model, "reset_parameters"):
+            model.reset_parameters()
+        else:
+            warnings.warn(
+                f"Model at index {model_idx} does not implement reset_parameters(). "
+                "Falling back to Normal(0, 0.01)."
+            )
+            for param_name, stacked_param in model_batch.stacked_params.items():
+                with torch.no_grad():
+                    stacked_param[model_idx].normal_(0, 0.01)
 
 
 class MetricsLogger(Callback):

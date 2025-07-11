@@ -10,25 +10,15 @@ import pytest
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch import Tensor
+from typing import Optional, cast
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modelbatch import ModelBatch
 from modelbatch.utils import create_identical_models
-
-
-class SimpleMLP(nn.Module):
-    """Simple MLP for testing."""
-    
-    def __init__(self, input_size=10, hidden_size=5, output_size=3):
-        super().__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, output_size)
-    
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return self.fc2(x)
+from test_models import SimpleMLP
 
 
 class TestModelBatch:
@@ -182,42 +172,3 @@ class TestModelBatch:
         metrics = mb.metrics()
         assert len(metrics) == 3
         assert all(key.startswith("loss_model_") for key in metrics.keys())
-
-
-if __name__ == "__main__":
-    # Run tests manually if pytest is not available
-    import traceback
-    
-    test_class = TestModelBatch()
-    test_methods = [method for method in dir(test_class) if method.startswith("test_")]
-    
-    passed = 0
-    failed = 0
-    
-    for method_name in test_methods:
-        try:
-            method = getattr(test_class, method_name)
-            if method_name == "test_save_load_all":
-                # Mock tmp_path for manual testing
-                import tempfile
-                with tempfile.TemporaryDirectory() as tmp_dir:
-                    class MockPath:
-                        def __init__(self, path):
-                            self.path = path
-                        def __truediv__(self, other):
-                            return os.path.join(self.path, other)
-                    method(MockPath(tmp_dir))
-            else:
-                method()
-            print(f"✅ {method_name}")
-            passed += 1
-        except Exception as e:
-            print(f"❌ {method_name}: {e}")
-            traceback.print_exc()
-            failed += 1
-    
-    print(f"\n📊 Test Results: {passed} passed, {failed} failed")
-    if failed == 0:
-        print("🎉 All tests passed!")
-    else:
-        print("⚠️  Some tests failed") 
