@@ -73,4 +73,5 @@ dev = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.15",
     "ruff>=0.12.2",
+    "torchvision>=0.22.1",
 ]
