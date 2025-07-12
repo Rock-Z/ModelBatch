@@ -23,8 +23,6 @@ nav:
   - Home: index.md
   - Core Design: design.md
   - Implementation Summary: IMPLEMENTATION_SUMMARY.md
-  - Progress Tracking: PROGRESS.md
-  - Development Workflow: AGENTS.md
 
 markdown_extensions:
   - codehilite

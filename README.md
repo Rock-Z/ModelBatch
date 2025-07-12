@@ -1,20 +1,29 @@
 # ModelBatch
 
-**Train hundreds to thousands of independent PyTorch models simultaneously on a single GPU using vectorized operations.**
+**Train tens to hundreds of independent PyTorch models simultaneously on a single GPU using vectorized operations.**
 
 [![Tests](https://github.com/your-username/ModelBatch/workflows/tests/badge.svg)](https://github.com/your-username/ModelBatch/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0+-orange.svg)](https://pytorch.org/)
 
+## ⚠️ Current Status
+
+**ModelBatch is in active development with known issues:**
+
+- **Test Status**: 18 failed, 37 passed tests (see details below)
+- **LSTM/CNN Support**: Limited due to `torch.vmap` batching rule limitations
+- **Result Equivalence**: Some divergence between sequential and batched training
+- **Performance**: 6.3x-10.4x speedup achieved, but with accuracy differences
+
 ## ⚡ Performance Results
 
-| Models | Speedup | Time (s) | GPU Utilization |
-|--------|---------|----------|-----------------|
-| 8      | **7.1x** | 0.20    | ~70%           |
-| 32     | **5.5x** | 0.30    | ~80%           |
-| **Avg**| **6.3x** | -       | -              |
+| Models | Speedup | Time (s) | GPU Utilization | Status |
+|--------|---------|----------|-----------------|--------|
+| 8      | **7.1x** | 0.20    | ~70%           | ⚠️ Divergent |
+| 32     | **5.5x** | 0.30    | ~80%           | ⚠️ Divergent |
+| **Avg**| **6.3x** | -       | -              | ⚠️ Divergent |
 
-*All 11 unit tests passing • CUDA compatibility confirmed*
+*Performance achieved but with accuracy differences vs sequential training*
 
 ## 🚀 Quick Start
 
@@ -53,7 +62,7 @@ uv run examples/simple_demo.py
 
 ## 🎯 Key Features
 
-- **Massive Speedups**: 6.3x average performance improvement
+- **Massive Speedups**: multiple-times performance improvement
 - **Single GPU Efficiency**: Max out GPU utilization with hundreds of models
 - **Drop-in Replacement**: Minimal code changes to existing PyTorch workflows  
 - **Framework Integration**: Works with HuggingFace Trainer, PyTorch Lightning
@@ -69,6 +78,26 @@ ModelBatch uses `torch.vmap` to vectorize forward/backward passes across multipl
 3. **Unified Optimizer**: One optimizer with per-model parameter groups
 4. **Shared Data Loading**: Single batch copied to GPU, reused by all models
 
+## ⚠️ Known Limitations
+
+### Model Compatibility
+- **✅ Supported**: Simple feedforward networks, basic CNN architectures
+- **❌ Limited**: LSTM/RNN models (batching rule not implemented for `aten::lstm.input`)
+- **❌ Limited**: Complex architectures with custom operations
+
+### Training Equivalence
+- **Speedup**: 6.3x-10.4x achieved consistently
+- **Accuracy**: Some divergence from sequential training (1-16% differences)
+- **Root Cause**: Investigating numerical precision and gradient flow differences
+
+### Test Status
+```
+19 failed, 36 passed, 1 skipped
+- LSTM model tests failing due to vmap limitations
+- CNN model tests failing due to assertion errors
+- Gradient consistency tests showing divergence
+```
+
 ## 📊 Use Cases
 
 - **Hyperparameter Sweeps**: Train hundreds of configurations on one GPU
@@ -81,13 +110,13 @@ ModelBatch uses `torch.vmap` to vectorize forward/backward passes across multipl
 ### Environment Setup
 
 ```bash
-uv venv && uv pip install -e ".[dev]"
+uv sync --dev
 ```
 
 ### Commands
 
 ```bash
-# Tests
+# Tests (currently showing failures)
 uv run -m pytest
 
 # Linting  
@@ -104,13 +133,13 @@ uv run mkdocs serve
 
 - **[Full Documentation](https://your-username.github.io/ModelBatch/)**
 - **[Core Design](docs/design.md)**: Architecture and goals
-- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)**: Technical details
+- **[Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)**: Technical details and current issues
 - **[Development Guide](AGENTS.md)**: Workflow and status
 
 ## 🗺️ Roadmap
 
-- ✅ **M1**: Core ModelBatch + demo (100% complete)
-- ✅ **M2**: OptimizerFactory + AMP (100% complete)  
+- 🔄 **M1**: Core ModelBatch + demo (90% complete - resolving test failures)
+- 🔄 **M2**: OptimizerFactory + AMP (90% complete - fixing equivalence issues)
 - 🔄 **M3**: HuggingFace integration
 - 🔄 **M4**: Lightning example + docs
 - 🔄 **M5**: Benchmark suite
@@ -123,3 +152,5 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## 🤝 Contributing
 
 Contributions welcome! See [AGENTS.md](AGENTS.md) for development workflow.
+
+**Current Focus**: Resolving test failures and training equivalence issues.
