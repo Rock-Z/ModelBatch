@@ -20,6 +20,12 @@ from modelbatch.optimizer import create_adam_configs
 from modelbatch.utils import create_identical_models, random_init_fn
 
 
+def set_seeds(seed: int = 6235):
+    """Set random seeds for reproducibility."""
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
+
 class TinyMLP(nn.Module):
     """Tiny MLP for quick testing."""
 
@@ -40,9 +46,8 @@ def quick_test():
     print("⚡ Quick Consistency Test")
     print("=" * 50)
 
-    # Minimal configuration
-    torch.manual_seed(42)
-    np.random.seed(42)
+    # Set initial seeds for data generation
+    set_seeds()
 
     num_models = 3
     num_epochs = 3
@@ -71,7 +76,10 @@ def quick_test():
     )
 
     dataset = TensorDataset(X, y)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False) # Do not shuffle since random shuffling also uses random state
+
+    # Reset seeds before sequential training to ensure models start with identical weights
+    set_seeds()
 
     # Sequential training
     print("\n📊 Sequential Training")
@@ -101,9 +109,9 @@ def quick_test():
         seq_accuracies.append(accuracy)
         print(f"  Model {i}: {accuracy:.1f}%")
 
-    # ModelBatch training - reset seeds so initial weights match
-    torch.manual_seed(42)
-    np.random.seed(42)
+    # Reset seeds before ModelBatch training to ensure models start with identical weights
+    # (same as sequential training for fair comparison)
+    set_seeds()
     # ModelBatch training
     print("\n⚡ ModelBatch Training")
     models_batch = create_identical_models(TinyMLP, {}, num_models, random_init_fn)

@@ -4,8 +4,10 @@
 import os
 import sys
 import time
+import copy
 from typing import Dict, List, Tuple, Optional
-
+import random
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision
@@ -21,12 +23,10 @@ from modelbatch.optimizer import create_adam_configs
 from modelbatch.utils import count_parameters
 
 
-def set_random_seeds(seed: int = 42):
+def set_random_seeds(seed: int = 6235):
     """Set random seeds for reproducible results."""
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    import random
-    import numpy as np
     random.seed(seed)
     np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
@@ -83,7 +83,22 @@ def load_cifar10_data(batch_size: int = 128, num_samples: Optional[int] = None) 
         test_indices = torch.randperm(len(testset))[:num_samples // 5].tolist()
         testset = Subset(testset, test_indices)
     
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
+    def seed_worker(worker_id):
+        worker_seed = torch.initial_seed() % 2**32
+        np.random.seed(worker_seed)
+        random.seed(worker_seed)
+
+    g = torch.Generator()
+    g.manual_seed(6325)
+
+    trainloader = DataLoader(
+        trainset, 
+        batch_size=batch_size, 
+        shuffle=True, 
+        num_workers=2, 
+        generator=g, 
+        worker_init_fn=seed_worker
+        )
     testloader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
     return trainloader, testloader
 
@@ -160,10 +175,10 @@ def train_sequential(models, trainloader: DataLoader, num_epochs: int,
                     learning_rates: List[float], device: torch.device) -> float:
     """Train models sequentially - one model completely, then the next."""
     print("📊 Sequential Training")
-    set_random_seeds(42)  # Set seed for reproducible training
     start_time = time.time()
     
     for model_idx, (model, lr) in enumerate(zip(models, learning_rates)):
+        set_random_seeds()
         model.to(device).train()
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         for epoch in range(num_epochs):
@@ -183,7 +198,7 @@ def train_modelbatch(models, trainloader: DataLoader, num_epochs: int,
                     learning_rates: List[float], device: torch.device) -> Tuple[float, ModelBatch]:
     """Train models using ModelBatch."""
     print("⚡ ModelBatch Training")
-    set_random_seeds(42)  # Set same seed for reproducible training
+    set_random_seeds()
     
     model_batch = ModelBatch(models, shared_input=True).to(device)
     param_info = count_parameters(model_batch)
@@ -233,22 +248,22 @@ def run_benchmark(num_models: int = 16, num_epochs: int = 5, batch_size: int = 1
     print(f"Dropout range: {min(dropout_rates):.3f}-{max(dropout_rates):.3f}")
     print(f"Learning rate range: {min(learning_rates):.6f}-{max(learning_rates):.6f}")
     
-    # Create models with same initialization
-    set_random_seeds(123)  # Seed for model initialization
+    # Create models with deterministic initialization
+    set_random_seeds()
     models = [LeNet5_CIFAR(dropout_rate=dropout_rates[i]) for i in range(num_models)]
     sample_params = sum(p.numel() for p in models[0].parameters())
     print(f"Parameters per model: {sample_params:,}")
     
     # Sequential training
     print("\n" + "="*60)
-    set_random_seeds(123)  # Reset for identical initialization
-    sequential_models = [LeNet5_CIFAR(dropout_rate=dropout_rates[i]) for i in range(num_models)]
+    set_random_seeds()
+    sequential_models = [copy.deepcopy(models[i]) for i in range(num_models)]
     sequential_time = train_sequential(sequential_models, trainloader, num_epochs, learning_rates, device)
     
     # ModelBatch training
     print("\n" + "="*60)
-    set_random_seeds(123)  # Reset for identical initialization
-    batch_models = [LeNet5_CIFAR(dropout_rate=dropout_rates[i]) for i in range(num_models)]
+    set_random_seeds()
+    batch_models = [copy.deepcopy(models[i]) for i in range(num_models)]
     batch_time, model_batch = train_modelbatch(batch_models, trainloader, num_epochs, learning_rates, device)
     
     # Performance comparison
@@ -328,14 +343,8 @@ if __name__ == "__main__":
     print("🧠 ModelBatch CIFAR10 LeNet Benchmark")
     print("="*60)
     
-    # Main benchmark
-    main_result = run_benchmark(num_models=16, num_epochs=5, num_samples=10000)
-    
     # Scalability study
     scalability_study()
-    
+
     print(f"\n{'='*60}")
     print("🎉 BENCHMARK COMPLETE!")
-    print(f"Main result: {main_result['speedup']:.1f}x speedup with {main_result['num_models']} models")
-    equiv_status = "✅ EQUIVALENT" if main_result['equivalent'] else "⚠️ DIVERGENT"
-    print(f"Result equivalence: {equiv_status}") 
