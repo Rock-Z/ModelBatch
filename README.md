@@ -8,7 +8,7 @@
 
 ## ⚠️ Current Status
 
-**ModelBatch is in active development with known issues:**
+**ModelBatch is in active development with known issues. See [IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) for more details.**
 
 ## 🚀 Quick Start
 
@@ -40,7 +40,7 @@ for batch in dataloader:
     mb.step()
 ```
 
-There are more examples in the [examples](examples) directory.
+See [here](examples) for more examples.
 
 ## 🛠️ Development
 

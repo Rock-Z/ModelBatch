@@ -34,7 +34,9 @@ class TinyMLP(nn.Module):
         self.layers = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
+            nn.Dropout(0.25),
             nn.Linear(hidden_size, num_classes),
+            nn.Dropout(0.25),
         )
 
     def forward(self, x):
@@ -152,7 +154,7 @@ def quick_test():
 
     print(f"\nMax difference: {max_diff:.1f}%")
 
-    if max_diff > 2.0:
+    if max_diff > 0.5:
         print("❌ DIVERGENT: Significant difference detected!")
         return False
     print("✅ CONSISTENT: Results match within tolerance")

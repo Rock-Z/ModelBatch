@@ -1,23 +1,23 @@
 # ModelBatch Implementation Summary
 
-*Status as of July 12 2025*
+*Status as of July 13 2025*
 
 ## 🎯 Project Overview
-ModelBatch is a library for training hundreds to thousands of independent PyTorch models simultaneously on a single GPU using `torch.vmap` for vectorized operations. This enables efficient hyperparameter sweeps and maximizes GPU utilization.
+ModelBatch is a library for training many independent PyTorch models simultaneously on a single GPU by grouping them into a single `ModelBatch` object. This enables efficient hyperparameter sweeps and maximizes GPU utilization.
 
 ## ⚠️ Current Status: Active Development
 
 ### Implementation Milestones
 
-✅ **M1**: Core ModelBatch + demo (70% complete, failing more complex models)
+✅ **M1**: Core ModelBatch + demo (90% complete, failing more complex models)
   - ModelBatch class with parameter stacking
-  - OptimizerFactory for per-model parameter groups
+  - OptimizerFactory for per-model optimizer configs
   - DataRouter for data filtering
   - CallbackPack for monitoring
   - Working demo with performance benchmarks
-✅ **M2**: OptimizerFactory + AMP (50% complete, consistency issues compared to sequential training)  
-  - OptimizerFactory for per-model parameter groups
-  - AMP support with GradScaler
+✅ **M2**: OptimizerFactory + AMP (90% complete, consistency issues compared to sequential training)  
+  - OptimizerFactory for per-model optimizer configs -- different lrs tested and passing
+  - AMP support with GradScaler -- NOT TESTED
 🔄 **M3**: HuggingFace integration
 🔄 **M4**: Lightning example + docs
 🔄 **M5**: Benchmark suite
@@ -27,9 +27,8 @@ ModelBatch is a library for training hundreds to thousands of independent PyTorc
 **test suite does not pass**
 
 1. **Training Equivalence**: Batched training now matches sequential training *unless* dropout is used. Dropout randomness remains different despite setting seeds.
-2. **LSTM Models**: `RuntimeError: Batching rule not implemented for aten::lstm.input`. This is because LSTM module is not supported by `torch.vmap`.
-3. **Dropout**: Output consistency due to dropout randomness
-   1. This is the case for both `examples/cifar10_lenet_benchmark.py` and `tests/test_consistency.py::TestModelBatchConsistency::test_output_consistency[SimpleCNN-model_params8-3-input_shape8-target_shape8-6]`
+   - See `examples/cifar10_lenet_benchmark.py`
+2. ~~**LSTM Models**~~ (dropped for now): `RuntimeError: Batching rule not implemented for aten::lstm.input`. This is because LSTM module is not supported by `torch.vmap`.
 
 ## 🏗️ Project Structure
 
