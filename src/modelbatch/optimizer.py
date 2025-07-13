@@ -2,7 +2,10 @@
 Optimizer factory for creating optimizers with per-model parameter groups.
 """
 
-from typing import Any, Dict, List, Optional, Type
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:  # pragma: no cover - for type checkers only
+    from .core import ModelBatch
 
 import torch
 from torch.cuda.amp import GradScaler
@@ -19,8 +22,8 @@ class OptimizerFactory:
 
     def __init__(
         self,
-        optimizer_cls: Type[Optimizer],
-        base_config: Optional[Dict[str, Any]] = None,
+        optimizer_cls: type[Optimizer],
+        base_config: Optional[dict[str, Any]] = None,
     ):
         """
         Initialize the optimizer factory.
@@ -35,7 +38,7 @@ class OptimizerFactory:
     def create_optimizer(
         self,
         model_batch: "ModelBatch",  # Forward reference to avoid circular imports
-        configs: List[Dict[str, Any]],
+        configs: list[dict[str, Any]],
     ) -> Optimizer:
         """
         Create optimizer for the stacked parameters with per-model parameter groups.
@@ -55,8 +58,8 @@ class OptimizerFactory:
         # Create parameter groups for each model
         param_groups = []
 
-        # We need to create separate leaf Parameter objects for each model
-        # These will be copies of the stacked parameter slices
+        # Create Parameter views for each model. These share storage with the
+        # stacked parameters so no data copying is required.
         model_parameters = {}  # model_idx -> {param_name -> Parameter}
 
         for model_idx in range(model_batch.num_models):
@@ -68,10 +71,10 @@ class OptimizerFactory:
             model_parameters[model_idx] = {}
 
             for param_name, stacked_param in model_batch.stacked_params.items():
-                # Create a new Parameter object that's a copy of the slice
-                # This will be a leaf tensor that the optimizer can work with
-                param_data = stacked_param[model_idx].clone().detach()
-                model_param = torch.nn.Parameter(param_data)
+                # Create a Parameter that is a view into the stacked tensor.
+                # This keeps the optimizer API happy while avoiding extra
+                # tensor copies. Gradients will be assigned manually.
+                model_param = torch.nn.Parameter(stacked_param[model_idx])
 
                 # Store the mapping for gradient synchronization
                 model_param._stacked_parent = stacked_param  # type: ignore
@@ -100,14 +103,14 @@ class OptimizerFactory:
         original_zero_grad = optimizer.zero_grad
 
         def custom_step(closure=None):
-            # First, sync gradients from stacked parameters to individual parameters
+            # Assign gradient views from the stacked parameters to the
+            # per-model parameters before stepping.
             self._sync_gradients_to_individual(model_batch, model_parameters)
 
-            # Perform the normal optimizer step
+            # Perform the normal optimizer step which updates the parameter
+            # views in-place. This automatically updates the stacked
+            # parameters since they share storage.
             result = original_step(closure)
-
-            # Sync the updated parameters back to stacked parameters
-            self._sync_parameters_to_stacked(model_batch, model_parameters)
 
             return result
 
@@ -125,7 +128,7 @@ class OptimizerFactory:
     def _sync_gradients_to_individual(
         self,
         model_batch: "ModelBatch",
-        model_parameters: Dict[int, Dict[str, torch.nn.Parameter]],
+        model_parameters: dict[int, dict[str, torch.nn.Parameter]],
     ) -> None:
         """Sync gradients from stacked parameters to individual model parameters."""
         for model_idx in range(model_batch.num_models):
@@ -133,31 +136,18 @@ class OptimizerFactory:
                 individual_param = model_parameters[model_idx][param_name]
 
                 if stacked_param.grad is not None:
-                    # Copy the gradient slice to the individual parameter
-                    individual_param.grad = stacked_param.grad[model_idx].clone()
+                    # Assign the gradient slice directly as a view to avoid
+                    # extra memory allocations.
+                    individual_param.grad = stacked_param.grad[model_idx]
                 else:
                     individual_param.grad = None
-
-    def _sync_parameters_to_stacked(
-        self,
-        model_batch: "ModelBatch",
-        model_parameters: Dict[int, Dict[str, torch.nn.Parameter]],
-    ) -> None:
-        """Sync updated individual parameters back to stacked parameters."""
-        for model_idx in range(model_batch.num_models):
-            for param_name, stacked_param in model_batch.stacked_params.items():
-                individual_param = model_parameters[model_idx][param_name]
-
-                # Copy the updated parameter data back to the stacked parameter
-                with torch.no_grad():
-                    stacked_param[model_idx].copy_(individual_param)
 
     def create_lr_scheduler(
         self,
         optimizer: Optimizer,
-        scheduler_cls: Type,
-        configs: List[Dict[str, Any]],
-    ) -> List:
+        scheduler_cls: type,
+        configs: list[dict[str, Any]],
+    ) -> list:
         """
         Create per-model learning rate schedulers.
 
@@ -192,9 +182,9 @@ class AMPOptimizerFactory(OptimizerFactory):
 
     def __init__(
         self,
-        optimizer_cls: Type[Optimizer],
-        base_config: Optional[Dict[str, Any]] = None,
-        scaler_config: Optional[Dict[str, Any]] = None,
+        optimizer_cls: type[Optimizer],
+        base_config: Optional[dict[str, Any]] = None,
+        scaler_config: Optional[dict[str, Any]] = None,
     ):
         super().__init__(optimizer_cls, base_config)
         self.scaler_config = scaler_config or {}
@@ -203,7 +193,7 @@ class AMPOptimizerFactory(OptimizerFactory):
     def create_optimizer(
         self,
         model_batch: "ModelBatch",
-        configs: List[Dict[str, Any]],
+        configs: list[dict[str, Any]],
     ) -> Optimizer:
         """Create optimizer with AMP support."""
         return super().create_optimizer(model_batch, configs)
@@ -229,10 +219,10 @@ class AMPOptimizerFactory(OptimizerFactory):
 
 
 def create_sgd_configs(
-    learning_rates: List[float],
+    learning_rates: list[float],
     momentum: float = 0.9,
     weight_decay: float = 1e-4,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Utility to create SGD configs with different learning rates.
 
@@ -251,11 +241,11 @@ def create_sgd_configs(
 
 
 def create_adam_configs(
-    learning_rates: List[float],
+    learning_rates: list[float],
     betas: tuple = (0.9, 0.999),
     eps: float = 1e-8,
     weight_decay: float = 0.0,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Utility to create Adam configs with different learning rates.
 
@@ -279,7 +269,7 @@ def create_lr_sweep_configs(
     max_lr: float,
     num_models: int,
     scale: str = "log",
-) -> List[Dict[str, float]]:
+) -> list[dict[str, float]]:
     """
     Create learning rate sweep configurations.
 
