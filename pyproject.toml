@@ -1,13 +1,12 @@
 [project]
 name = "modelbatch"
 version = "0.1.0"
-description = "Train hundreds to thousands of independent PyTorch models simultaneously on a single GPU using vectorized operations"
+description = "Train many independent PyTorch models simultaneously on a single GPU using vectorized operations"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "torch>=2.0.0",
     "numpy>=1.20.0",
-    "pytest>=8.4.1",
 ]
 keywords = ["pytorch", "machine learning", "vectorization", "gpu", "training"]
 classifiers = [
@@ -21,27 +20,6 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=5.0.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-]
-integrations = [
-    "transformers>=4.20.0",
-    "pytorch-lightning>=2.0.0",
-    "wandb>=0.15.0",
-    "tensorboard>=2.10.0",
-]
-benchmarks = [
-    "matplotlib>=3.5.0",
-    "pandas>=1.5.0",
-    "seaborn>=0.11.0",
 ]
 
 [build-system]
@@ -72,6 +50,12 @@ disallow_untyped_defs = true
 dev = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.15",
+    "pytest>=8.4.1",
     "ruff>=0.12.2",
     "torchvision>=0.22.1",
+]
+integrations = [
+    "pytorch-lightning>=2.5.2",
+    "transformers>=4.53.1",
+    "wandb>=0.21.0",
 ]

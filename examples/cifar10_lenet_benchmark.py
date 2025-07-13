@@ -148,9 +148,8 @@ def verify_equivalence(sequential_accuracies: List[float], batch_accuracies: Lis
         diff = sequential_accuracies[i] - batch_accuracies[i]
         differences.append(diff)
 
-        if i < 3:
-            print(f"Model {i}: Sequential={sequential_accuracies[i]:.2f}%, "
-                  f"ModelBatch={batch_accuracies[i]:.2f}%, Diff={diff:.2f}%")
+        print(f"Model {i}: Sequential={sequential_accuracies[i]:.2f}%, "
+                f"ModelBatch={batch_accuracies[i]:.2f}%, Diff={diff:.2f}%")
     
     # Calculate quartiles
     differences_sorted = sorted(differences)
@@ -248,7 +247,7 @@ def run_benchmark(num_models: int = 16, num_epochs: int = 5, batch_size: int = 1
     
     # Create hyperparameter variations
     dropout_rates = [0.1 + 0.02 * i for i in range(num_models)]
-    learning_rates = [0.001 * (0.9 ** i) for i in range(num_models)]
+    learning_rates = [0.01 * (0.5 ** i) for i in range(num_models)]
     print(f"Dropout range: {min(dropout_rates):.3f}-{max(dropout_rates):.3f}")
     print(f"Learning rate range: {min(learning_rates):.6f}-{max(learning_rates):.6f}")
     
@@ -306,10 +305,10 @@ def scalability_study():
     print("="*60)
     
     configs = [
-        {"num_models": 4, "num_epochs": 3},
-        {"num_models": 8, "num_epochs": 3},
-        {"num_models": 16, "num_epochs": 3},
-        {"num_models": 32, "num_epochs": 2},
+        {"num_models": 4, "num_epochs": 5},
+        {"num_models": 8, "num_epochs": 5},
+        {"num_models": 16, "num_epochs": 5},
+        {"num_models": 32, "num_epochs": 5},
     ]
     
     results = []
