@@ -168,7 +168,7 @@ class TestTrainingEquivalence:
             loss.backward()
             optimizer.step()
         
-        # Train with ModelBatch using different learning rates (using sum reduction for gradient equivalence)
+        # Train with ModelBatch using different learning rates
         mb_models = [SimpleMLP(input_size=4, output_size=3) for _ in range(2)]
         # Initialize with same weights as individual models (before training)
         torch.manual_seed(42)
@@ -189,7 +189,7 @@ class TestTrainingEquivalence:
         
         mb_optimizer.zero_grad()
         mb_outputs = mb(inputs)
-        mb_loss = mb.compute_loss(mb_outputs, targets, F.cross_entropy, reduction="sum")
+        mb_loss = mb.compute_loss(mb_outputs, targets, F.cross_entropy)
         mb_loss.backward()
         mb_optimizer.step()
         
@@ -198,12 +198,8 @@ class TestTrainingEquivalence:
         for i, (model, mb_state) in enumerate(zip(models, mb_states)):
             for (name, param), (mb_name, mb_param) in zip(model.state_dict().items(), mb_state.items()):
                 assert name == mb_name
-                # With proper per-model learning rates, parameters should match
-                try:
-                    assert torch.allclose(param, mb_param, atol=1e-4), f"Parameter mismatch in model {i}, param {name}"
-                    print(f"✅ Model {i} (LR={learning_rates[i]}) parameters match after training step")
-                except AssertionError:
-                    pytest.skip(f"Training equivalence not achieved for model {i} with LR {learning_rates[i]} - checking for remaining implementation issues")
+                # Parameters should match after training step
+                assert torch.allclose(param, mb_param, atol=1e-4), f"Parameter mismatch in model {i}, param {name}"
     
     def test_different_learning_rates(self):
         """Test that different learning rates are working correctly."""
@@ -225,7 +221,7 @@ class TestTrainingEquivalence:
         # Do one training step
         optimizer.zero_grad()
         outputs = mb(inputs)
-        loss = mb.compute_loss(outputs, targets, F.cross_entropy, reduction="sum")
+        loss = mb.compute_loss(outputs, targets, F.cross_entropy)
         loss.backward()
         
         # Store gradients before step

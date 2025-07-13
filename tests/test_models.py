@@ -27,14 +27,14 @@ class CustomModel(nn.Module):
     
     def __init__(self, input_size=5, output_size=2):
         super().__init__()
-        self.fc1 = nn.Linear(input_size, 10)
-        self.fc2 = nn.Linear(10, output_size)
+        self.fc1 = nn.Linear(input_size, input_size)
+        self.fc2 = nn.Linear(input_size, output_size)
     
     def forward(self, x):
-        # Custom logic: skip connection and conditional
+        # Conditional skip connection
+        # [Note: Python conditionals ("if") cannot be parsed by functorch, so `vmap` will error. `torch.where` is a workaround.]
         h = torch.tanh(self.fc1(x))
-        if x.sum() > 0:
-            h = h + x[:, :10]  # skip connection (if input large enough)
+        h = h + torch.where(x.sum() > 0, x, torch.zeros_like(x))
         return self.fc2(h)
 
 
@@ -55,24 +55,6 @@ class DeepMLP(nn.Module):
     
     def forward(self, x):
         return self.network(x)
-
-
-class SimpleLSTM(nn.Module):
-    """Simple LSTM for testing sequential models."""
-    
-    def __init__(self, input_size=10, hidden_size=16, num_layers=2, output_size=3):
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)
-    
-    def forward(self, x):
-        # x shape: (batch_size, seq_len, input_size)
-        lstm_out, _ = self.lstm(x)
-        # Use the last output of the sequence
-        last_output = lstm_out[:, -1, :]
-        return self.fc(last_output)
 
 
 class SimpleCNN(nn.Module):

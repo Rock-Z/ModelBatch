@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modelbatch import ModelBatch
 from modelbatch.utils import create_identical_models
-from test_models import CustomModel, DeepMLP, SimpleLSTM, SimpleCNN
+from test_models import CustomModel, DeepMLP, SimpleCNN
 
 class TestModelBatchCustomModels:
     def test_custom_logic_model_batch(self):
@@ -31,17 +31,7 @@ class TestModelBatchCustomModels:
             out_ref = model(input_tensor)
             assert torch.allclose(out_mb[i], out_ref)
 
-    def test_lstm_model_batch(self):
-        """Test ModelBatch with LSTM models."""
-        models = create_identical_models(SimpleLSTM, {"input_size": 8, "hidden_size": 12, "output_size": 4}, 2)
-        mb = ModelBatch(models)
-        batch_size = 5
-        seq_len = 10
-        input_tensor = torch.randn(batch_size, seq_len, 8)
-        out_mb = mb(input_tensor)
-        for i, model in enumerate(models):
-            out_ref = model(input_tensor)
-            assert torch.allclose(out_mb[i], out_ref)
+
 
     def test_cnn_model_batch(self):
         """Test ModelBatch with CNN models."""

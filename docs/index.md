@@ -1,6 +1,6 @@
 # ModelBatch
 
-**Train hundreds to thousands of independent PyTorch models simultaneously on a single GPU using vectorized operations.**
+**Train tens to hundreds of independent PyTorch models simultaneously on a single GPU using vectorized operations.**
 
 ## Overview
 
@@ -8,18 +8,21 @@ ModelBatch eliminates GPU waste by training multiple independent models in a sin
 
 ### Key Features
 
-- **Massive Speedups**: 6.3x average speedup (up to 7.1x with 8 models)
-- **Single GPU Efficiency**: Max out GPU utilization with hundreds of models
+- **Massive Speedups**: almost linear speedup with correct setup
+- **Single GPU Efficiency**: Max out GPU utilization with many small models
 - **Drop-in Replacement**: Minimal code changes to existing PyTorch workflows
-- **Framework Integration**: Works with HuggingFace, PyTorch Lightning
+- **Framework Integration**: (Hopes to) work with HuggingFace, PyTorch Lightning
 - **Per-model Isolation**: Separate parameters, optimizers, and metrics
 
 ## Quick Start
 
 ### Installation
 
+This repo uses [uv](https://docs.astral.sh/uv/) for environment management.
+
 ```bash
-uv add modelbatch
+uv sync --dev
+uv pip install -e ".[dev]"
 ```
 
 ### Basic Usage
@@ -43,14 +46,6 @@ for batch in dataloader:
     mb.step()
 ```
 
-## Performance Results
-
-| Models | Speedup | Time (s) |
-|--------|---------|----------|
-| 8      | 7.1x    | 0.20     |
-| 32     | 5.5x    | 0.30     |
-| **Avg**| **6.3x**| -        |
-
 ## Quick Commands
 
 ```bash
@@ -67,13 +62,5 @@ uv run mkdocs serve
 ## Documentation
 
 - **[Core Design](design.md)**: Architecture and goals
-- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)**: Technical details
-- **[Progress Tracking](PROGRESS.md)**: Current status
-- **[Development Workflow](AGENTS.md)**: Development process
-
-## Status
-
-✅ **M1 & M2 Complete**: Core functionality with impressive performance  
-🔄 **M3-M6**: HuggingFace integration, Lightning examples, benchmarks, v1.0
-
-All 11 unit tests passing with CUDA compatibility confirmed. 
+- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)**: Technical details & progress tracking
+- **[Development Workflow](../AGENTS.md)**: Instructions for development, LLMs and humans alike

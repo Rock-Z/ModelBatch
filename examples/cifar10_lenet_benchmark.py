@@ -341,7 +341,6 @@ def scalability_study():
 
 if __name__ == "__main__":
     print("🧠 ModelBatch CIFAR10 LeNet Benchmark")
-    print("="*60)
     
     # Scalability study
     scalability_study()

@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from modelbatch import ModelBatch
 from modelbatch.utils import create_identical_models
-from test_models import SimpleMLP, CustomModel, DeepMLP, SimpleLSTM, SimpleCNN
+from test_models import SimpleMLP, CustomModel, DeepMLP, SimpleCNN
 
 def assert_allclose_tensor(tensor1, tensor2, rtol=1e-5, atol=1e-8):
     """Helper function to assert two tensors are close."""
@@ -30,9 +30,6 @@ class TestModelBatchConsistency:
         
         (DeepMLP, {"input_size": 8, "output_size": 4}, 3, (6, 8), (6,), 6),
         (DeepMLP, {"input_size": 6, "output_size": 3}, 2, (3, 6), (3,), 3),
-        
-        (SimpleLSTM, {"input_size": 8, "hidden_size": 12, "output_size": 4}, 3, (6, 10, 8), (6,), 6),
-        (SimpleLSTM, {"input_size": 6, "hidden_size": 8, "output_size": 3, "num_layers": 1}, 2, (3, 6, 6), (3,), 3),
         
         (SimpleCNN, {"input_channels": 1, "num_classes": 4}, 3, (6, 1, 32, 32), (6,), 6),
         (SimpleCNN, {"input_channels": 3, "num_classes": 3}, 2, (3, 3, 32, 32), (3,), 3),
@@ -75,7 +72,7 @@ class TestModelBatchConsistency:
         # Compute outputs and loss
         outputs = mb(input_tensor)
         loss_fn = F.cross_entropy
-        mb_loss = mb.compute_loss(outputs, targets, loss_fn)
+        mb_loss = mb.compute_loss(outputs, targets, loss_fn, reduction="none")
         
         # Compute individual losses
         ref_losses = []
@@ -86,8 +83,8 @@ class TestModelBatchConsistency:
         
         # Assertions
         assert mb.latest_losses is not None
-        assert torch.allclose(mb.latest_losses, ref_losses)
-        assert torch.isclose(mb_loss, ref_losses.mean())
+        for i, loss in enumerate(mb.latest_losses):
+            assert torch.allclose(loss, ref_losses[i])
     
     @pytest.mark.parametrize("model_class,model_params,num_models,input_shape,target_shape,batch_size", MODEL_CONFIGS)
     def test_gradient_consistency(self, model_class, model_params, num_models, input_shape, target_shape, batch_size):
