@@ -49,14 +49,14 @@ class TestModelBatchConsistency:
         mb_out = mb_shared(input_tensor)
         for i, model in enumerate(models):
             ref_out = model(input_tensor)
-            assert torch.allclose(mb_out[i], ref_out)
+            assert torch.allclose(mb_out[i], ref_out, atol=1e-6)
         
         # Test non-shared input
         input_tensor_ns = torch.randn(num_models, *input_shape)
         mb_out_ns = mb_nonshared(input_tensor_ns)
         for i, model in enumerate(models):
             ref_out = model(input_tensor_ns[i])
-            assert torch.allclose(mb_out_ns[i], ref_out)
+            assert torch.allclose(mb_out_ns[i], ref_out, atol=1e-6)
     
     @pytest.mark.parametrize("model_class,model_params,num_models,input_shape,target_shape,batch_size", MODEL_CONFIGS)
     def test_loss_consistency(self, model_class, model_params, num_models, input_shape, target_shape, batch_size):

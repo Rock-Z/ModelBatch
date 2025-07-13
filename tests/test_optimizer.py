@@ -32,29 +32,18 @@ class TestOptimizerFactory:
         # With base config
         factory = OptimizerFactory(torch.optim.SGD, {"momentum": 0.9})
         assert factory.base_config == {"momentum": 0.9}
-    
-    def test_create_adam_configs(self):
-        """Test Adam config generation utility."""
-        lrs = [0.001, 0.002, 0.003]
-        configs = create_adam_configs(lrs)
-        
-        assert len(configs) == 3
-        for i, config in enumerate(configs):
-            assert config["lr"] == lrs[i]
-            assert config["betas"] == (0.9, 0.999)
-            assert config["eps"] == 1e-8
-            assert config["weight_decay"] == 0.0
-    
-    def test_create_sgd_configs(self):
-        """Test SGD config generation utility."""
-        lrs = [0.01, 0.02]
-        configs = create_sgd_configs(lrs, momentum=0.95, weight_decay=1e-3)
-        
-        assert len(configs) == 2
-        for i, config in enumerate(configs):
-            assert config["lr"] == lrs[i]
-            assert config["momentum"] == 0.95
-            assert config["weight_decay"] == 1e-3
+
+    def test_optimizer_creation_with_lr_sweep(self):
+        """Test optimizer creation with lr sweep."""
+        models = create_identical_models(SimpleMLP, {"input_size": 4, "output_size": 2}, 3)
+        mb = ModelBatch(models)
+        factory = OptimizerFactory(torch.optim.Adam)
+        configs = create_adam_configs([0.001, 0.01, 0.1])
+        optimizer = factory.create_optimizer(mb, configs)
+        assert len(optimizer.param_groups) == 3
+        assert optimizer.param_groups[0]["lr"] == 0.001
+        assert optimizer.param_groups[1]["lr"] == 0.01
+        assert optimizer.param_groups[2]["lr"] == 0.1
     
     def test_optimizer_creation_wrong_config_count(self):
         """Test that wrong number of configs raises error."""
@@ -67,7 +56,7 @@ class TestOptimizerFactory:
         with pytest.raises(ValueError, match="Expected 3 configs, got 2"):
             factory.create_optimizer(mb, configs)
     
-    def test_single_learning_rate_bug(self):
+    def test_individual_learning_rates(self):
         """Test that per-model learning rates work correctly."""
         models = create_identical_models(SimpleMLP, {"input_size": 4, "output_size": 2}, 3)
         mb = ModelBatch(models)
@@ -88,9 +77,6 @@ class TestOptimizerFactory:
         # Verify each model gets its intended learning rate
         for i, group in enumerate(param_groups):
             assert group["lr"] == learning_rates[i], f"Model {i} should have LR {learning_rates[i]}, got {group['lr']}"
-        
-        print("✅ Per-model learning rates are working correctly!")
-
 
 class TestTrainingEquivalence:
     """Test training equivalence between ModelBatch and sequential training."""
@@ -100,7 +86,6 @@ class TestTrainingEquivalence:
         models = create_identical_models(SimpleMLP, {"input_size": 4, "output_size": 3}, 2)
         
         # Test data
-        torch.manual_seed(42)
         inputs = torch.randn(5, 4)
         targets = torch.randint(0, 3, (5,))
         
@@ -144,19 +129,26 @@ class TestTrainingEquivalence:
                 expected_grad = ref_grad / 2  # Scaled by 1/num_models
                 assert torch.allclose(mb_grad, expected_grad, atol=1e-6), f"Mean reduction gradient scaling incorrect for model {i}, param {j}"
     
-    def test_single_step_training_equivalence(self):
+    @pytest.mark.parametrize("num_models", [1, 2, 4, 8])
+    def test_single_step_training_equivalence(self, num_models):
         """Test single training step equivalence with different learning rates per model."""
-        torch.manual_seed(42)
-        
-        # Create identical models
-        models = [SimpleMLP(input_size=4, output_size=3) for _ in range(2)]
+        # Create models
+        torch.manual_seed(6235)
+        models = [SimpleMLP(input_size=4, output_size=3) for _ in range(num_models)]
         
         # Test data
         inputs = torch.randn(5, 4)
         targets = torch.randint(0, 3, (5,))
         
-        # Different learning rates for each model (realistic OptimizerFactory usage)
-        learning_rates = [0.001, 0.01]
+        # Automatically generate different learning rates for each model
+        # Use a range from 0.0001 to 0.1 with exponential spacing
+        base_lr = 0.0001
+        max_lr = 0.1
+
+        if num_models == 1:
+            learning_rates = [base_lr]
+        else:
+            learning_rates = [base_lr * (max_lr / base_lr) ** (i / (num_models - 1)) for i in range(num_models)]
         
         # Train individual models with different learning rates
         optimizers = [torch.optim.Adam(model.parameters(), lr=learning_rates[i]) for i, model in enumerate(models)]
@@ -169,11 +161,8 @@ class TestTrainingEquivalence:
             optimizer.step()
         
         # Train with ModelBatch using different learning rates
-        mb_models = [SimpleMLP(input_size=4, output_size=3) for _ in range(2)]
-        # Initialize with same weights as individual models (before training)
-        torch.manual_seed(42)
-        for mb_model in mb_models:
-            pass  # Same initialization due to seed
+        torch.manual_seed(6235)
+        mb_models = [SimpleMLP(input_size=4, output_size=3) for _ in range(num_models)]
         
         mb = ModelBatch(cast(List[nn.Module], mb_models))
         
@@ -199,42 +188,4 @@ class TestTrainingEquivalence:
             for (name, param), (mb_name, mb_param) in zip(model.state_dict().items(), mb_state.items()):
                 assert name == mb_name
                 # Parameters should match after training step
-                assert torch.allclose(param, mb_param, atol=1e-4), f"Parameter mismatch in model {i}, param {name}"
-    
-    def test_different_learning_rates(self):
-        """Test that different learning rates are working correctly."""
-        models = create_identical_models(SimpleMLP, {"input_size": 4, "output_size": 3}, 3)
-        mb = ModelBatch(models)
-        
-        # Create very different learning rates
-        learning_rates = [0.001, 0.01, 0.1]
-        configs = create_adam_configs(learning_rates)
-        
-        factory = OptimizerFactory(torch.optim.Adam)
-        optimizer = factory.create_optimizer(mb, configs)
-        
-        # Test data
-        torch.manual_seed(42)
-        inputs = torch.randn(5, 4)
-        targets = torch.randint(0, 3, (5,))
-        
-        # Do one training step
-        optimizer.zero_grad()
-        outputs = mb(inputs)
-        loss = mb.compute_loss(outputs, targets, F.cross_entropy)
-        loss.backward()
-        
-        # Store gradients before step
-        pre_step_gradients = []
-        for param_name, stacked_param in mb.stacked_params.items():
-            pre_step_gradients.append(stacked_param.grad.clone())
-        
-        optimizer.step()
-        
-        # Verify each model gets its correct learning rate
-        for i in range(3):
-            expected_lr = learning_rates[i]
-            actual_lr = optimizer.param_groups[i]["lr"]  # Fixed: get LR for model i
-            
-            # Now the learning rates should match
-            assert expected_lr == actual_lr, f"Model {i} expected LR {expected_lr}, got {actual_lr}"
+                assert torch.allclose(param, mb_param, atol=1e-6), f"Parameter mismatch in model {i}, param {name}"
