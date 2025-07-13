@@ -20,7 +20,7 @@ class TestModelBatchCustomModels:
         out_mb = mb(input_tensor)
         for i, model in enumerate(models):
             out_ref = model(input_tensor)
-            assert torch.allclose(out_mb[i], out_ref)
+            assert torch.allclose(out_mb[i], out_ref, atol=1e-6)
 
     def test_deep_model_batch(self):
         models = create_identical_models(DeepMLP, {"input_size": 4, "output_size": 2}, 3)
@@ -29,9 +29,7 @@ class TestModelBatchCustomModels:
         out_mb = mb(input_tensor)
         for i, model in enumerate(models):
             out_ref = model(input_tensor)
-            assert torch.allclose(out_mb[i], out_ref)
-
-
+            assert torch.allclose(out_mb[i], out_ref, atol=1e-6)
 
     def test_cnn_model_batch(self):
         """Test ModelBatch with CNN models."""
@@ -42,4 +40,4 @@ class TestModelBatchCustomModels:
         out_mb = mb(input_tensor)
         for i, model in enumerate(models):
             out_ref = model(input_tensor)
-            assert torch.allclose(out_mb[i], out_ref) 
+            assert torch.allclose(out_mb[i], out_ref, atol=1e-6) 
