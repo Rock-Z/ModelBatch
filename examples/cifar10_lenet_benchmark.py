@@ -140,33 +140,39 @@ def verify_equivalence(sequential_accuracies: List[float], batch_accuracies: Lis
                       learning_rates: List[float], dropout_rates: List[float]) -> bool:
     """Verify that models with same parameters achieve nearly identical performance."""
     print(f"\n🔍 EQUIVALENCE VERIFICATION")
-    print("-"*40)
+    print("-"*50)
     
-    max_diff = 0.0
-    worst_model = -1
-    
+    # Calculate all differences
+    differences = []
     for i in range(len(sequential_accuracies)):
-        diff = abs(sequential_accuracies[i] - batch_accuracies[i])
-        if diff > max_diff:
-            max_diff = diff
-            worst_model = i
-        
-        if i < 3:  # Show first few models
+        diff = sequential_accuracies[i] - batch_accuracies[i]
+        differences.append(diff)
+
+        if i < 3:
             print(f"Model {i}: Sequential={sequential_accuracies[i]:.2f}%, "
                   f"ModelBatch={batch_accuracies[i]:.2f}%, Diff={diff:.2f}%")
     
-    print(f"Max difference: {max_diff:.2f}% (Model {worst_model})")
+    # Calculate quartiles
+    differences_sorted = sorted(differences)
+    n = len(differences_sorted)
+    q1_idx = n // 4
+    q2_idx = n // 2
+    q3_idx = 3 * n // 4
+    
+    q1 = differences_sorted[q1_idx]
+    q2 = differences_sorted[q2_idx]
+    q3 = differences_sorted[q3_idx]
+    min_diff = differences_sorted[0]
+    max_diff = differences_sorted[-1]
+    
+    print("Difference quartiles:")
+    print(f" {'Min':>8} | {'Q1':>8} | {'Q2':>8} | {'Q3':>8} | {'Max':>8}")
+    print("-" * 56)
+    print(f"{min_diff:8.2f}% |{q1:8.2f}% |{q2:8.2f}% |{q3:8.2f}% |{max_diff:8.2f}%")
     
     # With fixed seeds, expect very close results
     tolerance = 0.5  # 0.5% tolerance for seeded training
-    equivalent = max_diff < tolerance
-    
-    if equivalent:
-        print(f"✅ EQUIVALENT: Max difference {max_diff:.2f}% < {tolerance}% tolerance")
-    else:
-        print(f"⚠️  DIVERGENT: Max difference {max_diff:.2f}% > {tolerance}% tolerance")
-        print(f"   Worst model {worst_model}: LR={learning_rates[worst_model]:.6f}, "
-              f"Dropout={dropout_rates[worst_model]:.3f}")
+    equivalent = abs(max_diff) < tolerance and abs(min_diff) < tolerance
     
     return equivalent
 
@@ -207,7 +213,6 @@ def train_modelbatch(models, trainloader: DataLoader, num_epochs: int,
     optimizer_factory = OptimizerFactory(torch.optim.Adam)
     optimizer_configs = create_adam_configs(learning_rates)
     optimizer = optimizer_factory.create_optimizer(model_batch, optimizer_configs)
-    callbacks = create_default_callbacks(log_frequency=50)
     
     start_time = time.time()
     
@@ -220,7 +225,6 @@ def train_modelbatch(models, trainloader: DataLoader, num_epochs: int,
             loss = model_batch.compute_loss(outputs, target, F.cross_entropy)
             loss.backward()
             optimizer.step()
-            callbacks.on_train_step(model_batch, batch_idx)
     
     total_time = time.time() - start_time
     print(f"ModelBatch time: {total_time:.2f}s")
@@ -228,7 +232,7 @@ def train_modelbatch(models, trainloader: DataLoader, num_epochs: int,
 
 
 def run_benchmark(num_models: int = 16, num_epochs: int = 5, batch_size: int = 128, 
-                 num_samples: int = 10000) -> Dict[str, float]:
+                 num_samples: int = 60000) -> Dict[str, float]:
     """Run CIFAR10 LeNet benchmark."""
     print(f"🚀 CIFAR10 LeNet Benchmark: {num_models} Models")
     print("="*60)
@@ -256,13 +260,11 @@ def run_benchmark(num_models: int = 16, num_epochs: int = 5, batch_size: int = 1
     
     # Sequential training
     print("\n" + "="*60)
-    set_random_seeds()
     sequential_models = [copy.deepcopy(models[i]) for i in range(num_models)]
     sequential_time = train_sequential(sequential_models, trainloader, num_epochs, learning_rates, device)
     
     # ModelBatch training
     print("\n" + "="*60)
-    set_random_seeds()
     batch_models = [copy.deepcopy(models[i]) for i in range(num_models)]
     batch_time, model_batch = train_modelbatch(batch_models, trainloader, num_epochs, learning_rates, device)
     
@@ -304,10 +306,10 @@ def scalability_study():
     print("="*60)
     
     configs = [
-        {"num_models": 4, "num_epochs": 3, "num_samples": 5000},
-        {"num_models": 8, "num_epochs": 3, "num_samples": 5000},
-        {"num_models": 16, "num_epochs": 3, "num_samples": 5000},
-        {"num_models": 32, "num_epochs": 2, "num_samples": 3000},
+        {"num_models": 4, "num_epochs": 3},
+        {"num_models": 8, "num_epochs": 3},
+        {"num_models": 16, "num_epochs": 3},
+        {"num_models": 32, "num_epochs": 2},
     ]
     
     results = []
