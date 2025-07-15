@@ -15,4 +15,17 @@ __all__ = [
     "DataRouter",
     "ModelBatch",
     "OptimizerFactory",
-] 
+]
+
+# Optional integrations (only available if dependencies are installed)
+try:
+    from .optuna_integration import ModelBatchStudy, ConstraintSpec
+    __all__.extend(["ModelBatchStudy", "ConstraintSpec"])
+except ImportError:
+    pass
+
+try:
+    from .huggingface_integration import HFModelBatchStudy, HFConstraintSpec
+    __all__.extend(["HFModelBatchStudy", "HFConstraintSpec"])
+except ImportError:
+    pass 
