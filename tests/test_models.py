@@ -5,6 +5,14 @@ Shared test model definitions for ModelBatch tests.
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.utils.data import TensorDataset
+
+
+def create_dummy_data(num_samples: int = 1000, input_size: int = 784, num_classes: int = 10):
+    """Create dummy classification data for testing."""
+    X = torch.randn(num_samples, input_size)
+    y = torch.randint(0, num_classes, (num_samples,))
+    return TensorDataset(X, y)
 
 
 class SimpleMLP(nn.Module):
@@ -81,4 +89,21 @@ class SimpleCNN(nn.Module):
         # x shape: (batch_size, channels, height, width)
         x = self.features(x)
         x = x.view(x.size(0), -1)  # Flatten
-        return self.classifier(x) 
+        return self.classifier(x)
+
+
+class ImageMLP(nn.Module):
+    """Simple MLP for image classification tasks (e.g., CIFAR-10, MNIST)."""
+    
+    def __init__(self, input_size: int = 784, hidden_size: int = 128, num_classes: int = 10):
+        super().__init__()
+        self.layers = nn.Sequential(
+            nn.Linear(input_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
+            nn.Linear(hidden_size, num_classes),
+        )
+    
+    def forward(self, x):
+        return self.layers(x)
