@@ -2,14 +2,17 @@
 Optimizer factory for creating optimizers with per-model parameter groups.
 """
 
-from typing import TYPE_CHECKING, Any, Optional
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import torch
+from torch.amp.autocast_mode import autocast
+from torch.optim import Optimizer
 
 if TYPE_CHECKING:  # pragma: no cover - for type checkers only
     from .core import ModelBatch
 
-import torch
-from torch.optim import Optimizer
-from torch.amp.autocast_mode import autocast
 
 class OptimizerFactory:
     """
@@ -22,7 +25,7 @@ class OptimizerFactory:
     def __init__(
         self,
         optimizer_cls: type[Optimizer],
-        base_config: Optional[dict[str, Any]] = None,
+        base_config: dict[str, Any] | None = None,
     ):
         """
         Initialize the optimizer factory.
@@ -36,7 +39,7 @@ class OptimizerFactory:
 
     def create_optimizer(
         self,
-        model_batch: "ModelBatch",  # Forward reference to avoid circular imports
+        model_batch: ModelBatch,  # Forward reference to avoid circular imports
         configs: list[dict[str, Any]],
     ) -> Optimizer:
         """
@@ -109,11 +112,9 @@ class OptimizerFactory:
             # Perform the normal optimizer step which updates the parameter
             # views in-place. This automatically updates the stacked
             # parameters since they share storage.
-            result = original_step(closure)
+            return original_step(closure)
 
-            return result
-
-        def custom_zero_grad(set_to_none: bool = True):
+        def custom_zero_grad(*, set_to_none: bool = True):
             """Zero gradients for both individual and stacked parameters."""
             original_zero_grad(set_to_none=set_to_none)
             model_batch.zero_grad(set_to_none=set_to_none)
@@ -121,8 +122,10 @@ class OptimizerFactory:
         # Store original methods for potential AMP usage
         optimizer._original_step = original_step  # type: ignore
         optimizer._original_zero_grad = original_zero_grad  # type: ignore
-        optimizer._sync_gradients_fn = lambda: self._sync_gradients_to_individual(model_batch, model_parameters)  # type: ignore
-        
+        optimizer._sync_gradients_fn = lambda: self._sync_gradients_to_individual(
+            model_batch, model_parameters
+        )  # type: ignore
+
         optimizer.step = custom_step  # type: ignore
         optimizer.zero_grad = custom_zero_grad  # type: ignore
 
@@ -130,7 +133,7 @@ class OptimizerFactory:
 
     def _sync_gradients_to_individual(
         self,
-        model_batch: "ModelBatch",
+        model_batch: ModelBatch,
         model_parameters: dict[int, dict[str, torch.nn.Parameter]],
     ) -> None:
         """Sync gradients from stacked parameters to individual model parameters."""
@@ -168,7 +171,7 @@ class OptimizerFactory:
             )
 
         schedulers = []
-        for i, config in enumerate(configs):
+        for config in configs:
             # Create a scheduler for each parameter group
             # Note: This is a simplification - real implementation might need
             # custom scheduler that handles multiple param groups
@@ -179,22 +182,22 @@ class OptimizerFactory:
 
     def create_amp_optimizer(
         self,
-        model_batch: "ModelBatch",
+        model_batch: ModelBatch,
         configs: list[dict[str, Any]],
-    ) -> "AMPCompatibleOptimizer":
+    ) -> AMPCompatibleOptimizer:
         """
         Create AMP-compatible optimizer for use with torch.amp.GradScaler.
-        
+
         Args:
             model_batch: The ModelBatch instance
             configs: List of config dicts, one per model
-            
+
         Returns:
             AMP-compatible optimizer wrapper
         """
         # Create the regular optimizer
         optimizer = self.create_optimizer(model_batch, configs)
-        
+
         # Wrap it for AMP compatibility
         return AMPCompatibleOptimizer(optimizer)
 
@@ -278,112 +281,114 @@ def create_lr_sweep_configs(
 class AMPCompatibleOptimizer:
     """
     AMP-compatible wrapper for ModelBatch optimizers.
-    
+
     This wrapper ensures that the optimizer works correctly with torch.amp.GradScaler
     by providing the proper interface and state management that GradScaler expects.
     """
-    
+
     def __init__(self, optimizer: Optimizer):
         """
         Initialize the AMP-compatible wrapper.
-        
+
         Args:
             optimizer: The ModelBatch optimizer to wrap
         """
         self.optimizer = optimizer
-        self._model_batch = getattr(optimizer, '_model_batch', None)
-        self._model_parameters = getattr(optimizer, '_model_parameters', None)
-        
+        self._model_batch = getattr(optimizer, "_model_batch", None)
+        self._model_parameters = getattr(optimizer, "_model_parameters", None)
+
         # Store the custom step method from ModelBatch optimizer
         self._custom_step = optimizer.step
-        
+
         # Restore the original step method for GradScaler compatibility
-        if hasattr(optimizer, '_original_step'):
+        if hasattr(optimizer, "_original_step"):
             optimizer.step = optimizer._original_step
-    
-    def zero_grad(self, set_to_none: bool = True):
+
+    def zero_grad(self, *, set_to_none: bool = True):
         """Zero gradients for both individual and stacked parameters."""
         return self.optimizer.zero_grad(set_to_none=set_to_none)
-    
+
     def step(self, closure=None):
         """
         Perform optimizer step with proper gradient synchronization.
-        
+
         This method ensures gradients are properly synced from stacked parameters
         to individual model parameters before calling the original optimizer step.
         """
         # Sync gradients from stacked to individual parameters
         if self._model_batch is not None and self._model_parameters is not None:
             self._sync_gradients_to_individual()
-        
+
         # Call the original optimizer step
         return self.optimizer.step(closure)
-    
+
     def _sync_gradients_to_individual(self):
         """Sync gradients from stacked parameters to individual model parameters."""
         for model_idx in range(self._model_batch.num_models):
             for param_name, stacked_param in self._model_batch.stacked_params.items():
                 individual_param = self._model_parameters[model_idx][param_name]
-                
+
                 if stacked_param.grad is not None:
                     # Assign the gradient slice directly as a view to avoid
                     # extra memory allocations.
                     individual_param.grad = stacked_param.grad[model_idx]
                 else:
                     individual_param.grad = None
-    
+
     @property
     def param_groups(self):
         """Expose parameter groups for GradScaler compatibility."""
         return self.optimizer.param_groups
-    
-    @property 
+
+    @property
     def state(self):
         """Expose optimizer state for GradScaler compatibility."""
         return self.optimizer.state
-    
+
     def __getattr__(self, name):
         """Delegate all other attributes to the wrapped optimizer."""
         return getattr(self.optimizer, name)
 
 
-def train_step_with_amp(model_batch, data, target, loss_fn, optimizer, scaler, device='cuda'):
+def train_step_with_amp(
+    model_batch, data, target, loss_fn, optimizer, scaler, device="cuda"
+):
     """
     Convenience function for performing a single training step with AMP.
-    
+
     Args:
         model_batch: ModelBatch instance
         data: Input data tensor
-        target: Target tensor  
+        target: Target tensor
         loss_fn: Loss function (e.g., F.cross_entropy)
         optimizer: ModelBatch optimizer
         scaler: torch.amp.GradScaler instance
         device: Device for autocast (default: 'cuda'). Can be string or torch.device
-        
+
     Returns:
         loss: Computed loss value
     """
     optimizer.zero_grad()
-    
+
     # Ensure device is a string for autocast
     device_str = device if isinstance(device, str) else device.type
-    
+
     with autocast(device_str):
         outputs = model_batch(data)
         loss = model_batch.compute_loss(outputs, target, loss_fn)
-    
+
     # Scale the loss and perform backward pass
     scaler.scale(loss).backward()
-    
+
     # Manually sync gradients before unscaling (required for ModelBatch)
-    if hasattr(optimizer, '_sync_gradients_fn'):
+    if hasattr(optimizer, "_sync_gradients_fn"):
         optimizer._sync_gradients_fn()
-    
+
     # Unscale gradients before calling optimizer.step()
     scaler.unscale_(optimizer)
-    
+
     # Step the optimizer and update the scaler
     scaler.step(optimizer)
     scaler.update()
-    
+
     return loss

@@ -9,7 +9,6 @@ from .callbacks import CallbackPack
 from .core import ModelBatch
 from .data import DataRouter
 from .optimizer import OptimizerFactory, train_step_with_amp
-from .optimizer import OptimizerFactory, train_step_with_amp
 
 __all__ = [
     "CallbackPack",
@@ -17,4 +16,4 @@ __all__ = [
     "ModelBatch",
     "OptimizerFactory",
     "train_step_with_amp",
-] 
+]

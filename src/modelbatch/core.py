@@ -2,7 +2,9 @@
 Core ModelBatch implementation using torch.vmap for vectorized training.
 """
 
-from typing import Callable, Dict, List, Optional
+from __future__ import annotations
+
+from typing import Callable
 
 import torch
 from torch import nn
@@ -21,7 +23,7 @@ class ModelBatch(nn.Module):
         shared_input: If True, all models receive the same input data
     """
 
-    def __init__(self, models: List[nn.Module], shared_input: bool = True):
+    def __init__(self, models: list[nn.Module], shared_input: bool = True):
         super().__init__()
 
         if not models:
@@ -59,12 +61,12 @@ class ModelBatch(nn.Module):
         self.func_model = models[0]
 
         # Track latest losses for monitoring
-        self.latest_losses: Optional[torch.Tensor] = None
+        self.latest_losses: torch.Tensor | None = None
 
         # Enable/disable compilation
         self._compiled = False
 
-    def zero_grad(self, set_to_none: bool = True) -> None:
+    def zero_grad(self, *, set_to_none: bool = True) -> None:
         """Clear gradients for all stacked parameters."""
         for param in self.stacked_params.values():
             if set_to_none:
@@ -72,7 +74,7 @@ class ModelBatch(nn.Module):
             elif param.grad is not None:
                 param.grad.zero_()
 
-    def _verify_model_compatibility(self, models: List[nn.Module]) -> None:
+    def _verify_model_compatibility(self, models: list[nn.Module]) -> None:
         """Verify all models have identical structure."""
         if len(models) < 2:
             return
@@ -86,7 +88,7 @@ class ModelBatch(nn.Module):
             if set(ref_state.keys()) != set(model_state.keys()):
                 raise ValueError(f"Model {i} has different parameters than model 0")
 
-            for key in ref_state.keys():
+            for key in ref_state:
                 if ref_state[key].shape != model_state[key].shape:
                     raise ValueError(
                         f"Parameter '{key}' has different shape in model {i}: "
@@ -223,7 +225,7 @@ class ModelBatch(nn.Module):
             return per_model_losses
         raise ValueError(f"Unknown reduction: {reduction}")
 
-    def get_model_states(self) -> List[Dict[str, torch.Tensor]]:
+    def get_model_states(self) -> list[dict[str, torch.Tensor]]:
         """Extract individual model state dicts."""
         states = []
 
@@ -239,7 +241,7 @@ class ModelBatch(nn.Module):
 
         return states
 
-    def load_model_states(self, states: List[Dict[str, torch.Tensor]]) -> None:
+    def load_model_states(self, states: list[dict[str, torch.Tensor]]) -> None:
         """Load individual model states back into the batch."""
         if len(states) != self.num_models:
             raise ValueError(f"Expected {self.num_models} states, got {len(states)}")
@@ -257,22 +259,24 @@ class ModelBatch(nn.Module):
 
     def save_all(self, path: str) -> None:
         """Save all model states to directory."""
-        import os
+        from pathlib import Path
 
-        os.makedirs(path, exist_ok=True)
+        path_obj = Path(path)
+        path_obj.mkdir(parents=True, exist_ok=True)
 
         states = self.get_model_states()
         for i, state in enumerate(states):
-            torch.save(state, os.path.join(path, f"model_{i}.pt"))
+            torch.save(state, path_obj / f"model_{i}.pt")
 
     def load_all(self, path: str) -> None:
         """Load all model states from directory."""
-        import os
+        from pathlib import Path
 
+        path_obj = Path(path)
         states = []
         for i in range(self.num_models):
-            state_path = os.path.join(path, f"model_{i}.pt")
-            if not os.path.exists(state_path):
+            state_path = path_obj / f"model_{i}.pt"
+            if not state_path.exists():
                 raise FileNotFoundError(f"Model state not found: {state_path}")
             states.append(torch.load(state_path))
 
