@@ -8,14 +8,13 @@ __version__ = "0.1.0"
 from .callbacks import CallbackPack
 from .core import ModelBatch
 from .data import DataRouter
-from .optimizer import OptimizerFactory, train_step_with_amp
+from .optimizer import OptimizerFactory
 
 __all__ = [
     "CallbackPack",
     "DataRouter",
     "ModelBatch",
     "OptimizerFactory",
-    "train_step_with_amp",
 ]
 
 # Optional integrations (only available if dependencies are installed)

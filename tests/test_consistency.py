@@ -15,8 +15,6 @@ from modelbatch.utils import create_identical_models
 from .test_models import CustomModel, DeepMLP, SimpleCNN, SimpleMLP
 
 
-
-
 class TestModelBatchConsistency:
     """Test class for ModelBatch consistency with individual models."""
 
