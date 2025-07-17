@@ -15,12 +15,14 @@ ModelBatch is a library for training many independent PyTorch models simultaneou
   - DataRouter for data filtering
   - CallbackPack for monitoring
   - Working demo with performance benchmarks
+
 ✅ **M2**: OptimizerFactory + AMP (90% complete, consistency issues compared to sequential training)  
   - OptimizerFactory for per-model optimizer configs -- different lrs tested and passing
   - AMP support with GradScaler -- NOT TESTED
-🔄 **M3**: HuggingFace integration
-🔄 **M4**: Lightning example + docs
-🔄 **M5**: Benchmark suite
+
+🔄 **M3**: HuggingFace integration  
+🔄 **M4**: Lightning example + docs  
+🔄 **M5**: Benchmark suite  
 🔄 **M6**: v1.0 release
 
 ### Known Issues

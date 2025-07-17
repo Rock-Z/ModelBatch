@@ -8,8 +8,8 @@ import sys
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from torch import nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 # Add src to path
@@ -78,7 +78,9 @@ def quick_test():
     )
 
     dataset = TensorDataset(X, y)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False) # Do not shuffle since random shuffling also uses random state
+    dataloader = DataLoader(
+        dataset, batch_size=batch_size, shuffle=False
+    )  # Do not shuffle since random shuffling also uses random state
 
     # Reset seeds before sequential training to ensure models start with identical weights
     set_seeds()
@@ -95,7 +97,7 @@ def quick_test():
         correct = 0
         total = 0
 
-        for epoch in range(num_epochs):
+        for _epoch in range(num_epochs):
             for data, target in dataloader:
                 optimizer.zero_grad()
                 output = model(data)
@@ -127,7 +129,7 @@ def quick_test():
     correct_per_model = torch.zeros(num_models)
     total = 0
 
-    for epoch in range(num_epochs):
+    for _epoch in range(num_epochs):
         for data, target in dataloader:
             optimizer.zero_grad()
             outputs = model_batch(data)
