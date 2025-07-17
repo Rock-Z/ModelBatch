@@ -11,7 +11,6 @@ from modelbatch import ModelBatch
 from modelbatch.optimizer import (
     OptimizerFactory,
     create_adam_configs,
-    train_step_with_amp,
 )
 from modelbatch.utils import create_identical_models, random_init_fn
 
@@ -119,9 +118,13 @@ def test_amp_training_comprehensive(model_config, num_steps, optimizer_class, op
             break
         data, target = data.to(device), target.to(device)
 
-        loss = train_step_with_amp(
-            model_batch, data, target, F.cross_entropy, optimizer, scaler
-        )
+        optimizer.zero_grad()
+        with torch.amp.autocast("cuda"):
+            outputs = model_batch(data)
+            loss = model_batch.compute_loss(outputs, target, F.cross_entropy)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
         losses.append(loss.item())
 
     # Verify results
@@ -170,10 +173,15 @@ def test_amp_fp32_consistency():
 
     # Train for a few steps
     for _ in range(3):
-        # AMP step
-        loss_amp = train_step_with_amp(
-            model_batch_amp, data, target, F.cross_entropy, optimizer_amp, scaler
-        )
+        optimizer_amp.zero_grad()
+        with torch.amp.autocast("cuda"):
+            outputs_amp = model_batch_amp(data)
+            loss_amp = model_batch_amp.compute_loss(
+                outputs_amp, target, F.cross_entropy
+            )
+        scaler.scale(loss_amp).backward()
+        scaler.step(optimizer_amp)
+        scaler.update()
 
         # FP32 step
         optimizer_fp32.zero_grad()
@@ -233,9 +241,15 @@ def test_batched_vs_individual_consistency(num_models, input_size, scaling_facto
     scaler = GradScaler(device="cuda")
 
     # Batched training
-    loss_batched = train_step_with_amp(
-        model_batch, data, target, F.cross_entropy, batched_optimizer, scaler
-    )
+    batched_optimizer.zero_grad()
+    with torch.amp.autocast("cuda"):
+        outputs_batched = model_batch(data)
+        loss_batched = model_batch.compute_loss(
+            outputs_batched, target, F.cross_entropy
+        )
+    scaler.scale(loss_batched).backward()
+    scaler.step(batched_optimizer)
+    scaler.update()
 
     # Individual training
     individual_losses = []
@@ -324,9 +338,13 @@ def test_amp_overflow_handling(input_size):
     batched_scaler = GradScaler(device="cuda")
 
     # Run batched training step (we only need it for scaler updates, not the loss value)
-    train_step_with_amp(
-        model_batch, data, target, F.cross_entropy, batched_optimizer, batched_scaler
-    )
+    batched_optimizer.zero_grad()
+    with torch.amp.autocast("cuda"):
+        outputs = model_batch(data)
+        loss_batched = model_batch.compute_loss(outputs, target, F.cross_entropy)
+    batched_scaler.scale(loss_batched).backward()
+    batched_scaler.step(batched_optimizer)
+    batched_scaler.update()
 
     # Check overflow behavior consistency per model
     # Each model should have consistent NaN behavior between individual and batched training

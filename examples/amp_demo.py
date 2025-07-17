@@ -21,7 +21,6 @@ from modelbatch import ModelBatch
 from modelbatch.optimizer import (
     OptimizerFactory,
     create_adam_configs,
-    train_step_with_amp,
 )
 from modelbatch.utils import create_identical_models, random_init_fn
 
@@ -67,16 +66,15 @@ def train_modelbatch_amp(
             data, target = data.to(device), target.to(device)  # noqa: PLW2901
 
             if use_amp:
-                # Use the convenience function for AMP training
-                loss = train_step_with_amp(
-                    model_batch,
-                    data,
-                    target,
-                    F.cross_entropy,
-                    optimizer,
-                    scaler,
-                    device,
-                )
+                optimizer.zero_grad()
+                with torch.amp.autocast(device.type):
+                    outputs = model_batch(data)
+                    loss = model_batch.compute_loss(
+                        outputs, target, F.cross_entropy
+                    )
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
             else:
                 optimizer.zero_grad()
                 outputs = model_batch(data)
