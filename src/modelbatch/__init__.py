@@ -36,13 +36,23 @@ __all__ = [
 
 # Optional integrations (only available if dependencies are installed)
 try:
-    from .optuna_integration import ModelBatchStudy, ConstraintSpec
-    __all__.extend(["ModelBatchStudy", "ConstraintSpec"])
+    from .optuna_integration import ConstraintSpec, ModelBatchStudy
+
+    __all__ += ["ConstraintSpec", "ModelBatchStudy"]
 except ImportError:
     pass
 
 try:
-    from .huggingface_integration import HFModelBatchStudy, HFConstraintSpec
-    __all__.extend(["HFModelBatchStudy", "HFConstraintSpec"])
+    from .huggingface_integration import (
+        HFModelBatch,
+        HFTrainerMixin,
+        ModelBatchTrainer,
+    )
+
+    __all__ += [
+        "HFModelBatch",
+        "HFTrainerMixin",
+        "ModelBatchTrainer",
+    ]
 except ImportError:
-    pass 
+    pass
