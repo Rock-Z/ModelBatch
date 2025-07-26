@@ -229,12 +229,6 @@ def run_advanced_search():
                 'optimizer.weight_decay': trial.suggest_float('weight_decay', 1e-4, 1e-2, log=True),
             })
             
-            # DEBUG: Print suggested parameters for this trial
-            print(f"\n🔍 DEBUG Trial {trial.number}: Suggested parameters:")
-            for key, value in params.items():
-                if key != 'device':  # Skip device object for cleaner output
-                    print(f"  {key}: {value}")
-            
             return params
     
     # With automatic compatibility, no constraints needed!
@@ -262,15 +256,6 @@ def run_advanced_search():
         n_trials=50,
         show_progress_bar=True
     )
-    
-    # DEBUG: Print final batch grouping summary
-    print(f"\n🔍 DEBUG: Final batch grouping summary:")
-    if hasattr(mb_study, 'trial_batcher'):
-        for group_id, group in mb_study.trial_batcher.batch_groups.items():
-            trial_ids = [t.number for t in group.trials]
-            print(f"  Group {group_id}: {len(group.trials)} trials -> {trial_ids}")
-    else:
-        print("  No trial_batcher found")
     
     print(f"\n📊 Advanced Results:")
     print(f"Total trials: {len(study.trials)}")

@@ -13,6 +13,8 @@ from collections import defaultdict
 import tqdm
 from enum import Enum
 
+from .logger import get_optuna_logger
+
 if TYPE_CHECKING:
     from optuna import Study
     from optuna.trial import Trial, TrialState
@@ -35,6 +37,9 @@ import torch.nn as nn
 
 from .core import ModelBatch, _check_models_compatible
 from .optimizer import OptimizerFactory
+
+# Initialize logger for this module
+logger = get_optuna_logger()
 
 
 class BatchState(Enum):
@@ -144,28 +149,28 @@ class OptunaBatchProgressBar:
         # Show queue size (suggested but not yet executed)
         queue_size = self.trials_suggested - self.trials_executed
         if queue_size > 0:
-            status_parts.append(f"Queue: {queue_size}")
+            status_parts.append(f"Queued: {queue_size}")
         
         postfix = " | ".join(status_parts) if status_parts else "Ready"
         self.execute_bar.set_postfix_str(postfix)
     
     def close(self) -> None:
         """Close the progress display."""
-        # Final update
+        # Ensure final state is properly synchronized
+        # If there are any remaining trials that should be marked as executed, update the count
+        if self.trials_executed < self.trials_suggested:
+            remaining_trials = self.trials_suggested - self.trials_executed
+            self.trials_executed = self.trials_suggested
+            self.execute_bar.update(remaining_trials)
+        
+        # Final update of display
+        self._update_execution_bar()
         self.suggest_bar.refresh()
         self.execute_bar.refresh()
         
         # Close bars
         self.suggest_bar.close()
         self.execute_bar.close()
-        
-        # Final summary
-        print(f"\nOptimization completed: {self.trials_executed} trials executed")
-        if self.best_value is not None:
-            print(f"Best value: {self.best_value:.4f}")
-
-
-
 
 
 class ConstraintSpec:
@@ -402,70 +407,77 @@ class TrialBatcher:
         model: nn.Module
     ) -> str:
         """Add trial using automatic model structure compatibility detection."""
-        print(f"\n🔍 DEBUG: Adding trial {trial.number} to batch using auto compatibility")
-        print(f"  Current batch groups: {list(self.batch_groups.keys())}")
+        with logger.context(trial_id=trial.number):
+            logger.debug("Adding trial to batch using auto compatibility",
+                        extra={'current_batch_groups': list(self.batch_groups.keys())})
         
-        # Try to find an existing compatible batch group that can accept new trials
-        compatible_group = None
+            # Try to find an existing compatible batch group that can accept new trials
+            compatible_group = None
+            
+            for group_id, group in self.batch_groups.items():
+                with logger.context(group_id=group_id):
+                    logger.debug("Checking compatibility with group",
+                                extra={'num_models': len(group.models), 'group_state': group.state.value})
+                    
+                    # Skip groups that are not pending (the key fix for the race condition)
+                    if group.state != BatchState.PENDING:
+                        logger.debug("Skipping group: not pending", 
+                                   extra={'group_state': group.state.value})
+                        continue
+                    
+                    # Skip empty groups
+                    if not group.models:
+                        logger.debug("Skipping group: empty")
+                        continue
+                    
+                    # Skip groups that are at maximum capacity
+                    if self.max_models_per_batch and len(group.models) >= self.max_models_per_batch:
+                        logger.debug("Skipping group: at max capacity",
+                                   extra={'max_capacity': self.max_models_per_batch})
+                        continue
+                    
+                    # Check if this model is compatible with the group
+                    is_compatible, reason = _check_models_compatible(model, group.models[0])
+                    logger.debug("Compatibility check result",
+                               extra={'is_compatible': is_compatible, 'reason': reason})
+                    
+                    if is_compatible:
+                        compatible_group = group
+                        logger.debug("Found compatible group")
+                        break
         
-        for group_id, group in self.batch_groups.items():
-            print(f"  Checking compatibility with group {group_id} (has {len(group.models)} models, state: {group.state.value})")
+            # If no compatible group found, create a new one
+            if compatible_group is None:
+                # Generate unique group ID
+                group_id = f"auto_batch_{len(self.batch_groups)}"
+                
+                # Use model structure signature as constraint key
+                constraint_key = _get_model_structure_signature(model)
+                
+                logger.debug("No compatible group found, creating new group",
+                           extra={'new_group_id': group_id, 'structure_signature': constraint_key})
+                
+                # For auto-compatibility, constraint_params can be empty or contain metadata
+                constraint_params = {
+                    '_auto_generated': True,
+                    '_structure_signature': constraint_key
+                }
+                
+                compatible_group = BatchGroup(
+                    group_id=group_id,
+                    constraint_key=constraint_key,
+                    constraint_params=constraint_params
+                )
+                
+                # Use group_id as the key in batch_groups dict
+                self.batch_groups[group_id] = compatible_group
             
-            # Skip groups that are not pending (the key fix for the race condition)
-            if group.state != BatchState.PENDING:
-                print(f"    Skipping group {group_id}: not pending (state: {group.state.value})")
-                continue
+            # Add trial to the compatible group
+            compatible_group.add_trial(trial, trial_params, model)
+            logger.debug("Added trial to group",
+                       extra={'group_id': compatible_group.group_id, 'group_size': len(compatible_group.trials)})
             
-            # Skip empty groups
-            if not group.models:
-                print(f"    Skipping group {group_id}: empty")
-                continue
-            
-            # Skip groups that are at maximum capacity
-            if self.max_models_per_batch and len(group.models) >= self.max_models_per_batch:
-                print(f"    Skipping group {group_id}: at max capacity ({self.max_models_per_batch})")
-                continue
-            
-            # Check if this model is compatible with the group
-            is_compatible, reason = _check_models_compatible(model, group.models[0])
-            print(f"    Compatibility check with group {group_id}: {is_compatible} ({reason})")
-            
-            if is_compatible:
-                compatible_group = group
-                print(f"    ✅ Found compatible group: {group_id}")
-                break
-        
-        # If no compatible group found, create a new one
-        if compatible_group is None:
-            # Generate unique group ID
-            group_id = f"auto_batch_{len(self.batch_groups)}"
-            
-            # Use model structure signature as constraint key
-            constraint_key = _get_model_structure_signature(model)
-            
-            print(f"  ❌ No compatible group found, creating new group: {group_id}")
-            print(f"    Model structure signature: {constraint_key}")
-            
-            # For auto-compatibility, constraint_params can be empty or contain metadata
-            constraint_params = {
-                '_auto_generated': True,
-                '_structure_signature': constraint_key
-            }
-            
-            compatible_group = BatchGroup(
-                group_id=group_id,
-                constraint_key=constraint_key,
-                constraint_params=constraint_params
-            )
-            
-            # Use group_id as the key in batch_groups dict
-            self.batch_groups[group_id] = compatible_group
-        
-        # Add trial to the compatible group
-        compatible_group.add_trial(trial, trial_params, model)
-        print(f"  ✅ Added trial {trial.number} to group {compatible_group.group_id} (now has {len(compatible_group.trials)} trials)")
-        
-        return compatible_group.group_id
+            return compatible_group.group_id
     
     def _add_trial_constraint_based(
         self,
@@ -772,36 +784,41 @@ class ModelBatchStudy:
             batch_group.state = BatchState.RUNNING
             batch_group.execution_start_time = time.time()
 
-            print(f"🔍 DEBUG: Executing batch group {batch_group.group_id} with {len(batch_group.trials)} trials")
-            
-            # Create models for this batch
-            models = batch_group.models
-            
-            # Create ModelBatch
-            model_batch = ModelBatch(models).to(next(models[0].parameters()).device)
-            batch_group.model_batch = model_batch
-            
-            # Create optimizer with variable configurations
-            variable_configs = batch_group.get_variable_configs()
-            
-            metrics = objective_fn(model_batch, variable_configs)
-            
-            # Update trial results - tell the study the actual values
-            batch_group.metrics = metrics
-            batch_group.state = BatchState.COMPLETED
-            
-            # Report actual metrics to the study
-            for trial, metric in zip(batch_group.trials, metrics):
-                try:
-                    self.study.tell(trial, metric)  # type: ignore
-                except Exception:
-                    
-                    # Handle cases where trial might already be finished
-                    pass
-            
-            # Update progress bar
-            if progress_bar:
-                progress_bar.complete_batch_execution(batch_group.group_id, len(batch_group.trials))
+            with logger.context(batch_group_id=batch_group.group_id):
+                logger.debug("Executing batch group", 
+                           extra={'num_trials': len(batch_group.trials)})
+                
+                # Create models for this batch
+                models = batch_group.models
+                
+                # Create ModelBatch
+                model_batch = ModelBatch(models).to(next(models[0].parameters()).device)
+                batch_group.model_batch = model_batch
+                
+                # Create optimizer with variable configurations
+                variable_configs = batch_group.get_variable_configs()
+                
+                metrics = objective_fn(model_batch, variable_configs)
+                
+                # Update trial results - tell the study the actual values
+                batch_group.metrics = metrics
+                batch_group.state = BatchState.COMPLETED
+                
+                logger.debug("Batch execution completed", 
+                           extra={'metrics': metrics})
+                
+                # Report actual metrics to the study
+                for trial, metric in zip(batch_group.trials, metrics):
+                    try:
+                        self.study.tell(trial, metric)  # type: ignore
+                    except Exception:
+                        
+                        # Handle cases where trial might already be finished
+                        pass
+                
+                # Update progress bar
+                if progress_bar:
+                    progress_bar.complete_batch_execution(batch_group.group_id, len(batch_group.trials))
             
         except Exception as e:
             batch_group.state = BatchState.FAILED
@@ -818,11 +835,12 @@ class ModelBatchStudy:
         objective_fn: Callable[[ModelBatch, List[Dict[str, Any]]], List[float]],
         progress_bar: Optional[OptunaBatchProgressBar] = None
     ) -> None:
-        """Execute any remaining pending batches."""
+        """Execute any remaining pending or ready batches."""
         remaining_batches = list(self.trial_batcher.batch_groups.values())
         
         for batch_group in remaining_batches:
-            if batch_group.state == BatchState.PENDING and len(batch_group.trials) > 0:
+            # Execute both PENDING and READY batches that have trials
+            if batch_group.state in (BatchState.PENDING, BatchState.READY) and len(batch_group.trials) > 0:
                 if progress_bar:
                     progress_bar.start_batch_execution(batch_group.group_id)
                 self._execute_batch(batch_group, objective_fn, progress_bar)
