@@ -965,7 +965,6 @@ dependencies = [
     { name = "numpy", version = "2.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.10.*'" },
     { name = "numpy", version = "2.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "optuna" },
     { name = "torch" },
     { name = "tqdm" },
 ]
@@ -980,6 +979,7 @@ dev = [
     { name = "torchvision" },
 ]
 integrations = [
+    { name = "optuna" },
     { name = "pytorch-lightning" },
     { name = "transformers" },
     { name = "wandb" },
@@ -988,7 +988,6 @@ integrations = [
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=1.20.0" },
-    { name = "optuna", specifier = ">=4.4.0" },
     { name = "torch", specifier = ">=2.0.0" },
     { name = "tqdm", specifier = ">=4.64.0" },
 ]
@@ -1003,6 +1002,7 @@ dev = [
     { name = "torchvision", specifier = ">=0.22.1" },
 ]
 integrations = [
+    { name = "optuna", specifier = ">=4.4.0" },
     { name = "pytorch-lightning", specifier = ">=2.5.2" },
     { name = "transformers", specifier = ">=4.53.1" },
     { name = "wandb", specifier = ">=0.21.0" },
