@@ -83,7 +83,10 @@ class HFModelBatch(ModelBatch):
             and hasattr(outputs[0], "loss")
             and outputs[0].loss is not None
         ):
-            losses = torch.stack([out.loss for out in outputs])
+            # Check that all outputs have non-None losses before stacking
+            all_losses = [out.loss for out in outputs]
+            if all(loss is not None for loss in all_losses):
+                losses = torch.stack(all_losses)
         if losses is not None:
             return ModelOutput(logits=logits, loss=losses.mean())
         return ModelOutput(logits=logits)
@@ -99,7 +102,7 @@ class HFModelBatch(ModelBatch):
             val = obj(*args, **kwargs) if callable(obj) else obj
             results.append(val)
 
-        if stack and isinstance(results[0], torch.Tensor):
+        if stack and results and isinstance(results[0], torch.Tensor):
             return torch.stack(results)
         return results
 
@@ -257,7 +260,10 @@ class ModelBatchHFTrainer:
         if labels is None:
             return outputs.logits.mean()
         logits = outputs.logits
-        target = labels.unsqueeze(0).expand(logits.size(0), -1, -1)
+        # Fix: expand labels to match the first two dimensions of logits
+        # logits shape: [num_models, batch_size, vocab_size]
+        # labels shape: [batch_size] -> [1, batch_size] -> [num_models, batch_size]
+        target = labels.unsqueeze(0).expand(logits.size(0), -1)
         return torch.nn.functional.cross_entropy(
             logits.reshape(-1, logits.size(-1)), target.reshape(-1)
         )
