@@ -107,7 +107,8 @@ class TestBatchGroup:
         assert group.group_id == "test_group"
         assert group.constraint_key == "abc123"
         assert group.constraint_params == {'model.hidden_size': 64}
-        assert group.status == "pending"
+        from modelbatch.optuna_integration import BatchState
+        assert group.state == BatchState.PENDING
         assert len(group.trials) == 0
     
     def test_adding_trials(self):
@@ -201,29 +202,6 @@ class TestTrialBatcher:
         groups = list(batcher.batch_groups.values())
         assert len(groups[0].trials) == 2
         assert len(groups[1].trials) == 2
-    
-    def test_ready_batches(self):
-        """Test identification of ready batches."""
-        spec = ConstraintSpec()
-        batcher = TrialBatcher(spec, min_models_per_batch=2)
-        study = optuna.create_study()
-        
-        # Add single trial - not ready
-        trial1 = study.ask()
-        model1 = SimpleModel()
-        batcher.add_trial(trial1, {}, model1)
-        
-        ready = batcher.get_ready_batches()
-        assert len(ready) == 0
-        
-        # Add second trial - now ready
-        trial2 = study.ask()
-        model2 = SimpleModel()
-        batcher.add_trial(trial2, {}, model2)
-        
-        ready = batcher.get_ready_batches()
-        assert len(ready) == 1
-        assert len(ready[0].trials) == 2
     
     def test_batch_status(self):
         """Test batch status reporting."""

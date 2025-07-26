@@ -34,7 +34,7 @@ def set_random_seeds(seed: int = 6235):
     torch.backends.cudnn.benchmark = False
 
 
-class LeNet5CIFAR(nn.Module):
+class LeNet5_CIFAR(nn.Module):
     """LeNet-5 adapted for CIFAR10."""
 
     def __init__(self, dropout_rate: float = 0.1):
