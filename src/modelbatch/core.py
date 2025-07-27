@@ -51,7 +51,7 @@ class ModelBatch(nn.Module):
         shared_input: If True, all models receive the same input data
     """
 
-    def __init__(self, models: list[nn.Module], *, shared_input: bool = True):
+    def __init__(self, models: list[nn.Module], shared_input: bool = True):
         super().__init__()
 
         if not models:
@@ -94,7 +94,7 @@ class ModelBatch(nn.Module):
         # Enable/disable compilation
         self._compiled = False
 
-    def zero_grad(self, *, set_to_none: bool = True) -> None:
+    def zero_grad(self, set_to_none: bool = True) -> None:
         """Clear gradients for all stacked parameters."""
         for param in self.stacked_params.values():
             if set_to_none:

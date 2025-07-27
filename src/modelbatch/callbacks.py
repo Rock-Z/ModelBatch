@@ -24,7 +24,6 @@ class Callback(ABC):
         _metrics: dict[str, float],
     ) -> None:
         """Called after each training step."""
-        pass
 
     @abstractmethod
     def on_validation_step(
@@ -34,7 +33,6 @@ class Callback(ABC):
         metrics: dict[str, float],
     ) -> None:
         """Called after each validation step."""
-        pass
 
     @abstractmethod
     def on_epoch_end(
@@ -44,7 +42,6 @@ class Callback(ABC):
         metrics: dict[str, float],
     ) -> None:
         """Called at the end of each epoch."""
-        pass
 
 class CallbackPack:
     """
