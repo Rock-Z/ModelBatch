@@ -14,8 +14,6 @@ from transformers import BertConfig, BertForSequenceClassification, TrainingArgu
 
 import modelbatch
 
-pytestmark = pytest.mark.integration
-
 
 class TestHFModelBatch:
     def setup_method(self):

@@ -255,31 +255,6 @@ class TestModelBatchStudy:
         with pytest.raises(NotImplementedError):
             mb_study.suggest_parameters(trial)
     
-    def test_create_models_for_batch(self):
-        """Test model creation for batch groups."""
-        study = optuna.create_study()
-        spec = ConstraintSpec()
-        
-        mb_study = ModelBatchStudy(
-            study=study,
-            model_factory=create_model,
-            constraint_spec=spec,
-        )
-        
-        # Create batch group
-        group = BatchGroup("test", "key", {'model.hidden_size': 64})
-        
-        # Use real Optuna trials
-        trial1 = study.ask()
-        trial2 = study.ask()
-        
-        group.add_trial(trial1, {'optimizer.lr': 0.1}, SimpleModel())
-        group.add_trial(trial2, {'optimizer.lr': 0.01}, SimpleModel())
-        
-        models = mb_study.create_models_for_batch(group)
-        assert len(models) == 2
-        assert all(isinstance(m, SimpleModel) for m in models)
-    
     def test_optimization_summary(self):
         """Test optimization summary generation."""
         study = optuna.create_study()

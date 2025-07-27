@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+# Import transformers first - this is the main requirement
 try:
-    from datasets import Dataset
     from transformers import (
         PreTrainedModel,
         PreTrainedTokenizer,
@@ -22,12 +22,22 @@ try:
     HAS_TRANSFORMERS = True
 except ImportError:
     HAS_TRANSFORMERS = False
-    PreTrainedModel = Any  # type: ignore[assignment]
+    # Don't use Any for isinstance checks - create a dummy class instead
+    class _DummyPreTrainedModel:
+        pass
+    PreTrainedModel = _DummyPreTrainedModel  # type: ignore[assignment]
     PreTrainedTokenizer = Any  # type: ignore[assignment]
     TrainingArguments = Any  # type: ignore[assignment]
     Trainer = Any  # type: ignore[assignment]
-    Dataset = Any  # type: ignore[assignment]
     ModelOutput = Any  # type: ignore[assignment]
+
+# Import datasets separately - this is optional for some functionality
+try:
+    from datasets import Dataset
+    HAS_DATASETS = True
+except ImportError:
+    HAS_DATASETS = False
+    Dataset = Any  # type: ignore[assignment]
 
 import importlib
 import json
@@ -50,6 +60,10 @@ class HFModelBatch(ModelBatch):
         models: list[PreTrainedModel],
         shared_input: bool = True,  # noqa: FBT001, FBT002
     ) -> None:
+        # Add explicit check for transformers availability
+        if not HAS_TRANSFORMERS:
+            raise ImportError("transformers is required for HFModelBatch")
+            
         for m in models:
             if not isinstance(m, PreTrainedModel):
                 raise TypeError(
@@ -141,132 +155,6 @@ class HFModelBatch(ModelBatch):
             for i in range(meta["num_models"])
         ]
         return cls(models)
-
-
-class ModelBatchHFTrainer:
-    """
-    HuggingFace Trainer wrapper for ModelBatch training.
-
-    Provides compatibility with HuggingFace's training ecosystem while
-    leveraging ModelBatch's vectorized training capabilities.
-    """
-
-    def __init__(
-        self,
-        model_batch: ModelBatch,
-        args: TrainingArguments,
-        train_dataset: Dataset,
-        eval_dataset: Dataset | None = None,
-        tokenizer: PreTrainedTokenizer | None = None,
-        data_collator: Callable | None = None,
-        compute_metrics: Callable | None = None,
-    ):
-        if not HAS_TRANSFORMERS:
-            raise ImportError(
-                "transformers is required for ModelBatchHFTrainer. "
-                "Install with: pip install transformers datasets"
-            )
-
-        self.model_batch = model_batch
-        self.args = args
-        self.train_dataset = train_dataset
-        self.eval_dataset = eval_dataset
-        self.tokenizer = tokenizer
-        self.data_collator = data_collator
-        self.compute_metrics = compute_metrics
-
-        # Create underlying trainer for dataloaders and schedulers
-        self.trainer = Trainer(
-            model=self.model_batch.models[0],
-            args=args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            tokenizer=tokenizer,
-            data_collator=data_collator,
-            compute_metrics=compute_metrics,
-        )
-
-    def train(self) -> list[dict[str, float]]:
-        """Train models using ModelBatch approach."""
-        # Override training loop for ModelBatch
-        return self._train_with_modelbatch()
-
-    def _train_with_modelbatch(self) -> list[dict[str, float]]:
-        """Custom training loop using ModelBatch."""
-        device = torch.device(self.args.device)
-
-        # Setup data loader
-        train_dataloader = self.trainer.get_train_dataloader()
-
-        # Setup optimizer
-        optimizer = self._create_optimizer()
-
-        # Training loop
-        metrics = []
-        for _epoch in range(self.args.num_train_epochs):
-            epoch_metrics = self._train_epoch(train_dataloader, optimizer, device)
-            metrics.append(epoch_metrics)
-
-        return metrics
-
-    def _create_optimizer(self):
-        """Create optimizer compatible with ModelBatch."""
-        # Use OptimizerFactory for per-model configurations
-        factory = OptimizerFactory(torch.optim.AdamW)
-
-        # Create configs for each model
-        configs = []
-        for _ in range(self.model_batch.num_models):
-            config = {
-                "lr": self.args.learning_rate,
-                "weight_decay": self.args.weight_decay,
-                "betas": (self.args.adam_beta1, self.args.adam_beta2),
-                "eps": self.args.adam_epsilon,
-            }
-            configs.append(config)
-
-        return factory.create_optimizer(self.model_batch, configs)
-
-    def _train_epoch(self, dataloader, optimizer, device):
-        """Train for one epoch using ModelBatch."""
-        self.model_batch.train()
-        total_loss = 0.0
-        num_steps = 0
-
-        for batch in dataloader:
-            batch_dict = {k: v.to(device) for k, v in batch.items()}
-
-            optimizer.zero_grad()
-
-            # Forward pass
-            outputs = self.model_batch(**batch_dict)
-
-            # Compute loss (custom loss function needed)
-            loss = self._compute_loss(outputs, batch_dict)
-
-            loss.backward()
-            optimizer.step()
-
-            total_loss += loss.item()
-            num_steps += 1
-
-        return {"loss": total_loss / num_steps}
-
-    def _compute_loss(self, outputs, _batch):
-        """Compute loss for ModelBatch outputs."""
-        labels = _batch.get("labels")
-        if labels is None and hasattr(outputs, "loss") and outputs.loss is not None:
-            return outputs.loss
-        if labels is None:
-            return outputs.logits.mean()
-        logits = outputs.logits
-        # Fix: expand labels to match the first two dimensions of logits
-        # logits shape: [num_models, batch_size, vocab_size]
-        # labels shape: [batch_size] -> [1, batch_size] -> [num_models, batch_size]
-        target = labels.unsqueeze(0).expand(logits.size(0), -1)
-        return torch.nn.functional.cross_entropy(
-            logits.reshape(-1, logits.size(-1)), target.reshape(-1)
-        )
 
 
 class HFTrainerMixin:
