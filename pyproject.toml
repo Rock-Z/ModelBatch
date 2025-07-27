@@ -113,12 +113,14 @@ ignore = [
     "EM102",   # exception must not use an f-string literal
     "COM812",  # missing trailing comma in multiline
     "ISC001",  # single line implicit string concatenation
+    "NPY002",  # ignore legacy np.random.seed (needed for global state)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["S101", "ARG001", "PLR2004"]
 "examples/**/*" = ["T201", "S603", "S607"]
 "__init__.py" = ["F401"]
+"src/modelbatch/core.py" = ["FBT"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["modelbatch"]

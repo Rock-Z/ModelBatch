@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
 from torch.optim import Optimizer
 
@@ -78,9 +79,9 @@ class OptimizerFactory:
                 model_param = torch.nn.Parameter(stacked_param[model_idx])
 
                 # Store the mapping for gradient synchronization
-                model_param._stacked_parent = stacked_param  # type: ignore
-                model_param._model_index = model_idx  # type: ignore
-                model_param._param_name = param_name  # type: ignore
+                model_param._stacked_parent = stacked_param  # type: ignore[attr-defined]
+                model_param._model_index = model_idx  # type: ignore[attr-defined]
+                model_param._param_name = param_name  # type: ignore[attr-defined]
 
                 model_params.append(model_param)
                 model_parameters[model_idx][param_name] = model_param
@@ -215,8 +216,6 @@ def create_lr_sweep_configs(
     Returns:
         List of configs with different learning rates
     """
-    import numpy as np
-
     if scale == "log":
         lrs = np.logspace(np.log10(min_lr), np.log10(max_lr), num_models)
     elif scale == "linear":

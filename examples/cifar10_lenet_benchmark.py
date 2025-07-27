@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """CIFAR10 LeNet Benchmark: Train multiple LeNet models simultaneously."""
 
 from __future__ import annotations
@@ -29,12 +28,12 @@ def set_random_seeds(seed: int = 6235):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     random.seed(seed)
-    np.random.default_rng(seed)
+    np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
 
-class LeNet5_CIFAR(nn.Module):
+class LeNet5CIFAR(nn.Module):
     """LeNet-5 adapted for CIFAR10."""
 
     def __init__(self, dropout_rate: float = 0.1):
@@ -96,7 +95,7 @@ def load_cifar10_data(
 
     def seed_worker(_worker_id):
         worker_seed = torch.initial_seed() % 2**32
-        np.random.default_rng(worker_seed)
+        np.random.seed(worker_seed)
         random.seed(worker_seed)
 
     g = torch.Generator()
@@ -126,8 +125,9 @@ def evaluate_accuracy(
         total = 0
 
         with torch.no_grad():
-            for data, target in dataloader:
-                data, target = data.to(device), target.to(device)  # noqa: PLW2901
+            for batch_data, batch_target in dataloader:
+                data = batch_data.to(device)
+                target = batch_target.to(device)
                 outputs = models(data)
                 _, predicted = torch.max(outputs, 2)
                 target_expanded = target.unsqueeze(0).expand(models.num_models, -1)
@@ -140,8 +140,9 @@ def evaluate_accuracy(
         model.eval()
         correct = total = 0
         with torch.no_grad():
-            for data, target in dataloader:
-                data, target = data.to(device), target.to(device)  # noqa: PLW2901
+            for batch_data, batch_target in dataloader:
+                data = batch_data.to(device)
+                target = batch_target.to(device)
                 outputs = model(data)
                 _, predicted = torch.max(outputs.data, 1)
                 total += target.size(0)
@@ -153,8 +154,6 @@ def evaluate_accuracy(
 def verify_equivalence(
     sequential_accuracies: list[float],
     batch_accuracies: list[float],
-    learning_rates: list[float],
-    dropout_rates: list[float],
 ) -> bool:
     """Verify that models with same parameters achieve nearly identical performance."""
     print("\n🔍 EQUIVALENCE VERIFICATION")
@@ -210,8 +209,9 @@ def train_sequential(
         model.to(device).train()
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
         for _epoch in range(num_epochs):
-            for data, target in trainloader:
-                data, target = data.to(device), target.to(device)  # noqa: PLW2901
+            for batch_data, batch_target in trainloader:
+                data = batch_data.to(device)
+                target = batch_target.to(device)
                 optimizer.zero_grad()
                 loss = F.cross_entropy(model(data), target)
                 loss.backward()
@@ -228,7 +228,7 @@ def train_modelbatch(
     num_epochs: int,
     learning_rates: list[float],
     device: torch.device,
-) -> Tuple[float, ModelBatch]:
+) -> tuple[float, ModelBatch]:
     """Train models using ModelBatch."""
     print("⚡ ModelBatch Training")
     set_random_seeds()
@@ -247,8 +247,9 @@ def train_modelbatch(
 
     for _epoch in range(num_epochs):
         model_batch.train()
-        for _batch_idx, (data, target) in enumerate(trainloader):
-            data, target = data.to(device), target.to(device)
+        for _batch_idx, (batch_data, batch_target) in enumerate(trainloader):
+            data = batch_data.to(device)
+            target = batch_target.to(device)
             optimizer.zero_grad()
             outputs = model_batch(data)
             loss = model_batch.compute_loss(outputs, target, F.cross_entropy)
@@ -265,7 +266,7 @@ def run_benchmark(
     num_epochs: int = 5,
     batch_size: int = 128,
     num_samples: int = 60000,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Run CIFAR10 LeNet benchmark."""
     print(f"🚀 CIFAR10 LeNet Benchmark: {num_models} Models")
     print("=" * 60)
@@ -281,7 +282,7 @@ def run_benchmark(
     )
     print(
         f"Training samples: {len(trainloader.dataset)}, Test samples: {len(testloader.dataset)}"
-    )  # type: ignore
+    )
 
     # Create hyperparameter variations
     dropout_rates = [0.1 + 0.02 * i for i in range(num_models)]
@@ -291,7 +292,7 @@ def run_benchmark(
 
     # Create models with deterministic initialization
     set_random_seeds()
-    models = [LeNet5_CIFAR(dropout_rate=dropout_rates[i]) for i in range(num_models)]
+    models = [LeNet5CIFAR(dropout_rate=dropout_rates[i]) for i in range(num_models)]
     sample_params = sum(p.numel() for p in models[0].parameters())
     print(f"Parameters per model: {sample_params:,}")
 
@@ -324,9 +325,7 @@ def run_benchmark(
         sequential_models, testloader, device, is_batch=False
     )
 
-    equivalent = verify_equivalence(
-        sequential_accuracies, batch_accuracies, learning_rates, dropout_rates
-    )
+    equivalent = verify_equivalence(sequential_accuracies, batch_accuracies)
 
     # Memory usage
     if torch.cuda.is_available():
@@ -367,7 +366,7 @@ def scalability_study():
             results.append(result)
             equiv_status = "✅ EQUIVALENT" if result["equivalent"] else "⚠️ DIVERGENT"
             print(f"✅ {result['speedup']:.1f}x speedup, {equiv_status}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"❌ Failed: {e}")
 
     # Summary

@@ -170,7 +170,7 @@ class StratifiedDataRouter(DataRouter):
             num_classes = labels.max().item() + 1
 
         if self.strategy == "round_robin":
-            return self._round_robin_indices(labels, num_classes)
+            return self._round_robin_indices(labels)
         if self.strategy == "random":
             return self._random_indices(labels)
         if self.strategy == "class_based":
@@ -180,7 +180,6 @@ class StratifiedDataRouter(DataRouter):
     def _round_robin_indices(
         self,
         labels: torch.Tensor,
-        num_classes: int,
     ) -> list[torch.Tensor]:
         """Distribute samples round-robin across models."""
         batch_size = labels.shape[0]

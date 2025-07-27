@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Demo: ModelBatch training with Automatic Mixed Precision (AMP).
 Trains multiple MLPs simultaneously, comparing standard and AMP training.

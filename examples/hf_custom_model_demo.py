@@ -1,5 +1,4 @@
 """Quick demo of training custom ``PreTrainedModel`` instances in ``HFModelBatch``."""
-# ruff: noqa: INP001
 
 from __future__ import annotations
 

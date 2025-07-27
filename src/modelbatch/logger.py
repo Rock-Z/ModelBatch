@@ -8,6 +8,7 @@ Features:
 - Context managers for timing and custom contexts
 - Logger hierarchy support
 """
+from __future__ import annotations
 
 from contextlib import contextmanager
 import json
@@ -15,7 +16,7 @@ import logging
 import os
 from pathlib import Path
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 class JSONFormatter(logging.Formatter):
@@ -30,12 +31,33 @@ class JSONFormatter(logging.Formatter):
         }
 
         # Add extra fields from record
-        for key, value in record.__dict__.items():
-            if key not in ["name", "msg", "args", "levelname", "levelno", "pathname",
-                          "filename", "module", "lineno", "funcName", "created",
-                          "msecs", "relativeCreated", "thread", "threadName",
-                          "processName", "process", "message"]:
-                log_data[key] = value
+        log_data.update(
+            {
+                key: value
+                for key, value in record.__dict__.items()
+                if key
+                not in [
+                    "name",
+                    "msg",
+                    "args",
+                    "levelname",
+                    "levelno",
+                    "pathname",
+                    "filename",
+                    "module",
+                    "lineno",
+                    "funcName",
+                    "created",
+                    "msecs",
+                    "relativeCreated",
+                    "thread",
+                    "threadName",
+                    "processName",
+                    "process",
+                    "message",
+                ]
+            }
+        )
 
         return json.dumps(log_data, default=str)
 
@@ -45,7 +67,7 @@ class ContextLogger:
 
     def __init__(self, logger: logging.Logger):
         self._logger = logger
-        self._context: Dict[str, Any] = {}
+        self._context: dict[str, Any] = {}
 
     def _log_with_context(self, level: int, msg: str, *args, **kwargs):
         """Log message with current context."""
@@ -74,7 +96,7 @@ class ContextLogger:
     def critical(self, msg: str, *args, **kwargs):
         self._log_with_context(logging.CRITICAL, msg, *args, **kwargs)
 
-    def isEnabledFor(self, level: int) -> bool:
+    def isEnabledFor(self, level: int) -> bool:  # noqa: N802
         return self._logger.isEnabledFor(level)
 
     @contextmanager
@@ -105,13 +127,16 @@ class LoggerManager:
 
     def __init__(self):
         self._configured = False
-        self._loggers: Dict[str, ContextLogger] = {}
+        self._loggers: dict[str, ContextLogger] = {}
 
-    def configure(self,
-                  level: Optional[str] = None,
-                  log_file: Optional[str] = None,
-                  log_format: str = "console",
-                  console: bool = True) -> None:
+    def configure(
+        self,
+        level: str | None = None,
+        log_file: str | None = None,
+        log_format: str = "console",
+        *,
+        console: bool = True,
+    ) -> None:
         """Configure logging system."""
         if self._configured:
             return

@@ -3,10 +3,11 @@ Tests for ModelBatch-Optuna integration.
 
 These tests verify the constraint system, batching logic, and Optuna integration.
 """
+# ruff: noqa: E402
 
 import os
 import sys
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 import torch
@@ -41,7 +42,7 @@ class SimpleModel(nn.Module):
         return self.fc2(x)
 
 
-def create_model(params: Dict[str, Any]) -> nn.Module:
+def create_model(params: dict[str, Any]) -> nn.Module:
     """Factory function for test models."""
     return SimpleModel(
         input_size=params.get("model.input_size", 10),
@@ -85,8 +86,8 @@ class TestConstraintSpec:
     def test_constraint_validation(self):
         """Test parameter validation."""
         # Overlapping parameters should raise error
-        with pytest.raises(ValueError):
-            spec = ConstraintSpec(
+        with pytest.raises(ValueError, match="both fixed and variable"):
+            ConstraintSpec(
                 fixed_params=["model.hidden_size"],
                 variable_params=["model.hidden_size"]  # Overlaps with fixed
             )
@@ -106,7 +107,7 @@ class TestBatchGroup:
         assert group.group_id == "test_group"
         assert group.constraint_key == "abc123"
         assert group.constraint_params == {"model.hidden_size": 64}
-        from modelbatch.optuna_integration import BatchState
+        from modelbatch.optuna_integration import BatchState  # noqa: PLC0415
         assert group.state == BatchState.PENDING
         assert len(group.trials) == 0
 
@@ -330,7 +331,7 @@ class TestConstraintValidation:
 
     def test_parameter_overlap_detection(self):
         """Test detection of overlapping parameters."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="both fixed and variable"):
             ConstraintSpec(
                 fixed_params=["model.size"],
                 variable_params=["model.size"]  # Should overlap

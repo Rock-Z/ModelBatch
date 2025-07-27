@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Simple demo of ModelBatch training multiple MLPs simultaneously.
 This demonstrates the core functionality with a clear speed comparison.
@@ -44,9 +43,9 @@ def create_dummy_data(
     num_samples: int = 1000, input_size: int = 784, num_classes: int = 10
 ):
     """Create dummy classification data for testing."""
-    X = torch.randn(num_samples, input_size)
+    x = torch.randn(num_samples, input_size)
     y = torch.randint(0, num_classes, (num_samples,))
-    return TensorDataset(X, y)
+    return TensorDataset(x, y)
 
 
 def train_sequential(models, train_loader, num_epochs, device):
@@ -58,8 +57,9 @@ def train_sequential(models, train_loader, num_epochs, device):
             optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
             model.train()
 
-            for data, target in train_loader:
-                data, target = data.to(device), target.to(device)
+            for batch_data, batch_target in train_loader:
+                data = batch_data.to(device)
+                target = batch_target.to(device)
 
                 optimizer.zero_grad()
                 output = model(data)
@@ -71,7 +71,12 @@ def train_sequential(models, train_loader, num_epochs, device):
 
 
 def train_modelbatch(
-    model_batch, train_loader, num_epochs, device, use_optimizer_factory=False
+    model_batch,
+    train_loader,
+    num_epochs,
+    device,
+    *,
+    use_optimizer_factory=False,
 ):
     """Train models using ModelBatch with either same or different optimizers."""
     start_time = time.time()
@@ -87,8 +92,9 @@ def train_modelbatch(
     for _epoch in range(num_epochs):
         model_batch.train()
 
-        for data, target in train_loader:
-            data, target = data.to(device), target.to(device)
+        for batch_data, batch_target in train_loader:
+            data = batch_data.to(device)
+            target = batch_target.to(device)
 
             optimizer.zero_grad()
             outputs = model_batch(data)
