@@ -7,6 +7,7 @@ requires-python = ">=3.9"
 dependencies = [
     "torch>=2.0.0",
     "numpy>=1.20.0",
+    "tqdm>=4.64.0",
 ]
 keywords = ["pytorch", "machine learning", "vectorization", "gpu", "training"]
 classifiers = [
@@ -148,10 +149,14 @@ dev = [
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.6.15",
     "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
     "ruff>=0.12.2",
     "torchvision>=0.22.1",
+    {include-group = "integrations"}
 ]
 integrations = [
+    "accelerate>=1.9.0",
+    "optuna>=4.4.0",
     "pytorch-lightning>=2.5.2",
     "transformers>=4.53.1",
     "wandb>=0.21.0",

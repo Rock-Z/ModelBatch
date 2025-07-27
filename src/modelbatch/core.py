@@ -11,6 +11,33 @@ from torch import nn
 from torch.func import functional_call, stack_module_state
 
 
+def _check_models_compatible(model1: nn.Module, model2: nn.Module) -> tuple[bool, str]:
+    """
+    Check if two models have compatible structure for ModelBatch.
+    
+    Args:
+        model1: First model to compare
+        model2: Second model to compare
+        
+    Returns:
+        Tuple of (is_compatible: bool, error_message: str)
+        If compatible, error_message will be empty string.
+    """
+    state1 = model1.state_dict()
+    state2 = model2.state_dict()
+    
+    # Check that parameter names match exactly
+    if set(state1.keys()) != set(state2.keys()):
+        return False, "Models have different parameters"
+    
+    # Check that parameter shapes match exactly
+    for key in state1:
+        if state1[key].shape != state2[key].shape:
+            return False, f"Parameter '{key}' has different shapes: {state1[key].shape} vs {state2[key].shape}"
+    
+    return True, ""
+
+
 class ModelBatch(nn.Module):
     """
     Vectorized batch of independent PyTorch models.
@@ -80,20 +107,11 @@ class ModelBatch(nn.Module):
             return
 
         reference = models[0]
-        ref_state = reference.state_dict()
 
         for i, model in enumerate(models[1:], 1):
-            model_state = model.state_dict()
-
-            if set(ref_state.keys()) != set(model_state.keys()):
-                raise ValueError(f"Model {i} has different parameters than model 0")
-
-            for key in ref_state:
-                if ref_state[key].shape != model_state[key].shape:
-                    raise ValueError(
-                        f"Parameter '{key}' has different shape in model {i}: "
-                        f"{model_state[key].shape} vs {ref_state[key].shape}",
-                    )
+            is_compatible, error_msg = _check_models_compatible(reference, model)
+            if not is_compatible:
+                raise ValueError(f"Model {i} is incompatible with model 0: {error_msg}")
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         """
