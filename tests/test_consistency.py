@@ -4,7 +4,7 @@ from typing import ClassVar
 
 import pytest
 import torch
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))

@@ -25,16 +25,16 @@ def _check_models_compatible(model1: nn.Module, model2: nn.Module) -> tuple[bool
     """
     state1 = model1.state_dict()
     state2 = model2.state_dict()
-    
+
     # Check that parameter names match exactly
     if set(state1.keys()) != set(state2.keys()):
         return False, "Models have different parameters"
-    
+
     # Check that parameter shapes match exactly
     for key in state1:
         if state1[key].shape != state2[key].shape:
             return False, f"Parameter '{key}' has different shapes: {state1[key].shape} vs {state2[key].shape}"
-    
+
     return True, ""
 
 

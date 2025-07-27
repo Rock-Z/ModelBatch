@@ -10,7 +10,7 @@ from typing import cast
 import pytest
 import torch
 from torch import nn
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))

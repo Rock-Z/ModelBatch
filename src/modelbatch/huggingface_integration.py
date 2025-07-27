@@ -7,7 +7,7 @@ maintaining ModelBatch's batching efficiency and constraint system.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 # Import transformers first - this is the main requirement
 try:
@@ -63,7 +63,7 @@ class HFModelBatch(ModelBatch):
         # Add explicit check for transformers availability
         if not HAS_TRANSFORMERS:
             raise ImportError("transformers is required for HFModelBatch")
-            
+
         for m in models:
             if not isinstance(m, PreTrainedModel):
                 raise TypeError(

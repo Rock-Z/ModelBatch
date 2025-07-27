@@ -11,7 +11,7 @@ import time
 import torch
 from torch import nn
 from torch.amp.grad_scaler import GradScaler
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 # Add src to path so we can import modelbatch

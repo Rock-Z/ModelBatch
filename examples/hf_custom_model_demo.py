@@ -8,7 +8,7 @@ import sys
 
 import torch
 from torch import nn
-import torch.nn.functional as F  # noqa: N812
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 from transformers import PretrainedConfig, PreTrainedModel, TrainingArguments
 
