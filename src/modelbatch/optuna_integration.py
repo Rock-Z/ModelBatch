@@ -4,11 +4,13 @@ Optuna integration for ModelBatch hyperparameter optimization.
 This module provides integration between ModelBatch and Optuna for efficient
 hyperparameter search while maintaining batching constraints.
 """
+from __future__ import annotations
 
+import contextlib
 from enum import Enum
 import hashlib
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable
 import warnings
 
 import tqdm
@@ -26,11 +28,11 @@ try:
     HAS_OPTUNA = True
 except ImportError:
     HAS_OPTUNA = False
-    optuna = None  # type: ignore
+    optuna = None  # type: ignore[assignment]
     if not TYPE_CHECKING:
-        Study = Any  # type: ignore
-        Trial = Any  # type: ignore
-        TrialState = Any  # type: ignore
+        Study = Any  # type: ignore[assignment]
+        Trial = Any  # type: ignore[assignment]
+        TrialState = Any  # type: ignore[assignment]
 
 from torch import nn
 
@@ -52,13 +54,13 @@ class BatchState(Enum):
 def _get_model_structure_signature(model: nn.Module) -> str:
     """
     Get a deterministic signature representing the model's parameter structure.
-    
+
     This signature captures the parameter names and shapes, which is exactly
     what ModelBatch uses to determine compatibility.
-    
+
     Args:
         model: PyTorch model to analyze
-        
+
     Returns:
         String signature that uniquely identifies the model structure
     """
@@ -71,13 +73,13 @@ def _get_model_structure_signature(model: nn.Module) -> str:
 
     # Create deterministic signature by sorting parameter info
     structure_str = "|".join(sorted(structure_info))
-    return hashlib.md5(structure_str.encode()).hexdigest()
+    return hashlib.md5(structure_str.encode()).hexdigest()  # noqa: S324
 
 
 class OptunaBatchProgressBar:
     """Simple progress bar for Optuna-ModelBatch integration with dual progress bars."""
 
-    def __init__(self, total_trials: int, show_batch_details: bool = True):
+    def __init__(self, total_trials: int, *, show_batch_details: bool = True):
         self.total_trials = total_trials
         self.show_batch_details = show_batch_details
 
@@ -104,7 +106,7 @@ class OptunaBatchProgressBar:
             leave=True
         )
 
-    def update_suggestion(self, trial_id: str, trial_params: Dict[str, Any], best_value: Optional[float] = None) -> None:
+    def update_suggestion(self, _trial_id: str, _trial_params: dict[str, Any], best_value: float | None = None) -> None:
         """Update progress when a new trial is suggested."""
         self.trials_suggested += 1
 
@@ -116,19 +118,25 @@ class OptunaBatchProgressBar:
         self.suggest_bar.set_postfix_str(f"Best: {best_str}")
         self.suggest_bar.update(1)
 
-    def update_batch_group(self, group_id: str, constraint_params: Dict[str, Any],
-                          current_trials: int, max_trials: int, status: str,
-                          timeout_remaining: Optional[float] = None) -> None:
+    def update_batch_group(
+        self,
+        _group_id: str,
+        _constraint_params: dict[str, Any],
+        _current_trials: int,
+        _max_trials: int,
+        _status: str,
+        _timeout_remaining: float | None = None,
+    ) -> None:
         """Update batch group information."""
         # Simplified - just update execution bar display
         self._update_execution_bar()
 
-    def start_batch_execution(self, group_id: str) -> None:
+    def start_batch_execution(self, _group_id: str) -> None:
         """Mark a batch as starting execution."""
         self.active_batches += 1
         self._update_execution_bar()
 
-    def complete_batch_execution(self, group_id: str, trial_count: int) -> None:
+    def complete_batch_execution(self, _group_id: str, trial_count: int) -> None:
         """Mark a batch as completed."""
         self.active_batches = max(0, self.active_batches - 1)
         self.trials_executed += trial_count
@@ -174,11 +182,11 @@ class OptunaBatchProgressBar:
 class ConstraintSpec:
     """
     Optional specification for hyperparameter constraints within ModelBatch runs.
-    
+
     When provided, defines which parameters must be identical across models in a batch
     versus which can vary between models. When not provided, ModelBatch uses automatic
     compatibility detection based on model structure.
-    
+
     Attributes:
         fixed_params: Parameters that must be identical across all models (optional)
         variable_params: Parameters that can vary between models (optional)
@@ -188,9 +196,10 @@ class ConstraintSpec:
 
     def __init__(
         self,
-        fixed_params: Optional[List[str]] = None,
-        variable_params: Optional[List[str]] = None,
-        batch_aware_params: Optional[List[str]] = None,
+        fixed_params: list[str] | None = None,
+        variable_params: list[str] | None = None,
+        batch_aware_params: list[str] | None = None,
+        *,
         use_auto_compatibility: bool = False,
     ):
         self.fixed_params = fixed_params or []
@@ -202,7 +211,7 @@ class ConstraintSpec:
         if (fixed_params or variable_params or batch_aware_params) and use_auto_compatibility:
             warnings.warn(
                 "Constraint parameters provided but use_auto_compatibility=True. "
-                "Auto-compatibility will be used. Set use_auto_compatibility=False to use constraints."
+                "Auto-compatibility will be used. Set use_auto_compatibility=False to use constraints.", stacklevel=2
             )
 
         # Validate constraint parameters if using them
@@ -214,7 +223,7 @@ class ConstraintSpec:
             if overlap:
                 raise ValueError(f"Parameters cannot be both fixed and variable: {overlap}")
 
-    def get_constraint_key(self, trial_params: Dict[str, Any], model: Optional[nn.Module] = None) -> str:
+    def get_constraint_key(self, trial_params: dict[str, Any], model: nn.Module | None = None) -> str:
         """Generate constraint key for grouping trials."""
         if self.use_auto_compatibility and model is not None:
             # Use model structure for automatic compatibility
@@ -235,9 +244,9 @@ class ConstraintSpec:
 
         # Create deterministic hash
         key_data = str(sorted(constraint_params.items()))
-        return hashlib.md5(key_data.encode()).hexdigest()
+        return hashlib.md5(key_data.encode()).hexdigest()  # noqa: S324
 
-    def validate_trial(self, trial: Trial) -> bool:
+    def validate_trial(self, _trial: Trial) -> bool:
         """Validate that trial parameters meet constraint requirements."""
         if self.use_auto_compatibility:
             # No validation needed for auto-compatibility
@@ -257,24 +266,24 @@ class ConstraintSpec:
 class BatchGroup:
     """
     A collection of trials that can be trained together in a single ModelBatch.
-    
+
     Manages the lifecycle of trials within a constraint-compatible group.
     """
 
-    def __init__(self, group_id: str, constraint_key: str, constraint_params: Dict[str, Any]):
+    def __init__(self, group_id: str, constraint_key: str, constraint_params: dict[str, Any]):
         self.group_id = group_id
         self.constraint_key = constraint_key
         self.constraint_params = constraint_params
-        self.trials: List[Trial] = []
-        self.trial_params: List[Dict[str, Any]] = []
-        self.models: List[nn.Module] = []
-        self.model_batch: Optional[ModelBatch] = None
-        self.metrics: List[float] = []
+        self.trials: list[Trial] = []
+        self.trial_params: list[dict[str, Any]] = []
+        self.models: list[nn.Module] = []
+        self.model_batch: ModelBatch | None = None
+        self.metrics: list[float] = []
         self.creation_time: float = time.time()
-        self.execution_start_time: Optional[float] = None
+        self.execution_start_time: float | None = None
         self.state = BatchState.PENDING
 
-    def add_trial(self, trial: Trial, params: Dict[str, Any], model: nn.Module) -> None:
+    def add_trial(self, trial: Trial, params: dict[str, Any], model: nn.Module) -> None:
         """Add a trial to this batch group."""
         # Prevent adding trials to non-pending batches
         if self.state != BatchState.PENDING:
@@ -284,13 +293,12 @@ class BatchGroup:
             )
 
         # Check compatibility with existing models in the group
-        if self.models:
-            if not _check_models_compatible(self.models[0], model)[0]:
-                raise ValueError(
-                    f"Model for trial {trial.number} is not compatible with existing models "
-                    f"in batch group {self.group_id}. Model structures must match exactly for batching. "
-                    f"This suggests an issue with the constraint specification or model factory."
-                )
+        if self.models and not _check_models_compatible(self.models[0], model)[0]:
+            raise ValueError(
+                f"Model for trial {trial.number} is not compatible with existing models "
+                f"in batch group {self.group_id}. Model structures must match exactly for batching. "
+                "This suggests an issue with the constraint specification or model factory."
+            )
 
         self.trials.append(trial)
         self.trial_params.append(params)
@@ -300,13 +308,13 @@ class BatchGroup:
         """Check if this group has enough trials to start training."""
         return len(self.trials) >= min_models_per_batch
 
-    def is_full(self, max_models_per_batch: Optional[int] = None) -> bool:
+    def is_full(self, max_models_per_batch: int | None = None) -> bool:
         """Check if this group has reached maximum size."""
         if max_models_per_batch is None:
             return False
         return len(self.trials) >= max_models_per_batch
 
-    def get_timeout_remaining(self, timeout: Optional[float] = None) -> Optional[float]:
+    def get_timeout_remaining(self, timeout: float | None = None) -> float | None:
         """Get remaining timeout for this batch group."""
         if not timeout:
             return None
@@ -315,7 +323,7 @@ class BatchGroup:
         remaining = timeout - elapsed
         return max(0, remaining)
 
-    def is_timed_out(self, timeout: Optional[float] = None) -> bool:
+    def is_timed_out(self, timeout: float | None = None) -> bool:
         """Check if this batch group has timed out."""
         if not timeout:
             return False
@@ -327,17 +335,14 @@ class BatchGroup:
         """Get the age of this batch group in seconds."""
         return time.time() - self.creation_time
 
-    def should_start(self, timeout: Optional[float] = None) -> bool:
+    def should_start(self, timeout: float | None = None) -> bool:
         """Determine if batch should start based on timeout or other criteria."""
         if self.state != BatchState.PENDING:
             return False
 
-        if timeout and (time.time() - self.creation_time) > timeout:
-            return True
+        return bool(timeout and time.time() - self.creation_time > timeout)
 
-        return False
-
-    def get_variable_configs(self) -> List[Dict[str, Any]]:
+    def get_variable_configs(self) -> list[dict[str, Any]]:
         """Extract variable parameter configurations for optimizer setup."""
         variable_configs = []
 
@@ -356,7 +361,7 @@ class BatchGroup:
 class TrialBatcher:
     """
     Groups Optuna trials into compatible batches based on constraints.
-    
+
     Responsible for trial-to-batch mapping and batch lifecycle management.
     """
 
@@ -364,8 +369,8 @@ class TrialBatcher:
         self,
         constraint_spec: ConstraintSpec,
         min_models_per_batch: int = 1,
-        max_models_per_batch: Optional[int] = None,
-        batch_timeout: Optional[float] = None,
+        max_models_per_batch: int | None = None,
+        batch_timeout: float | None = None,
         partial_batch_timeout_factor: float = 0.5,
         min_accumulation_time: float = 10.0,
         periodic_execution_interval: int = 10,
@@ -378,13 +383,13 @@ class TrialBatcher:
         self.min_accumulation_time = min_accumulation_time
         self.periodic_execution_interval = periodic_execution_interval
 
-        self.batch_groups: Dict[str, BatchGroup] = {}
-        self.pending_trials: List[Tuple[Trial, Dict[str, Any], nn.Module]] = []
+        self.batch_groups: dict[str, BatchGroup] = {}
+        self.pending_trials: list[tuple[Trial, dict[str, Any], nn.Module]] = []
 
     def add_trial(
         self,
         trial: Trial,
-        trial_params: Dict[str, Any],
+        trial_params: dict[str, Any],
         model: nn.Module
     ) -> str:
         """Add trial to appropriate batch group using automatic compatibility detection."""
@@ -400,7 +405,7 @@ class TrialBatcher:
     def _add_trial_auto_compatibility(
         self,
         trial: Trial,
-        trial_params: Dict[str, Any],
+        trial_params: dict[str, Any],
         model: nn.Module
     ) -> str:
         """Add trial using automatic model structure compatibility detection."""
@@ -479,7 +484,7 @@ class TrialBatcher:
     def _add_trial_constraint_based(
         self,
         trial: Trial,
-        trial_params: Dict[str, Any],
+        trial_params: dict[str, Any],
         model: nn.Module
     ) -> str:
         """Add trial using legacy constraint-based grouping."""
@@ -504,7 +509,7 @@ class TrialBatcher:
 
         return group.group_id
 
-    def get_ready_batches(self) -> List[BatchGroup]:
+    def get_ready_batches(self) -> list[BatchGroup]:
         """Return batch groups ready for training with smarter criteria."""
         ready_batches = []
 
@@ -523,7 +528,7 @@ class TrialBatcher:
     def _should_execute_partial_batch(self, group: BatchGroup) -> bool:
         """
         Determine if a partial batch should be executed now.
-        
+
         This implements smarter batching logic that prioritizes larger batches
         and uses timeouts to prevent trials from waiting indefinitely.
         """
@@ -544,7 +549,7 @@ class TrialBatcher:
         # No larger groups, execute if we've waited the minimum accumulation time
         return age > self.min_accumulation_time
 
-    def get_batch_status(self) -> Dict[str, int]:
+    def get_batch_status(self) -> dict[str, int]:
         """Get summary of batch group status."""
         return {
             "total_groups": len(self.batch_groups),
@@ -556,36 +561,36 @@ class TrialBatcher:
 class ModelBatchStudy:
     """
     Optuna study wrapper that automatically groups compatible models for efficient training.
-    
+
     This is the main integration point between ModelBatch and Optuna. By default, it uses
     automatic compatibility detection to group models with identical structures together,
     eliminating the need to manually specify constraints.
-    
+
     Models are automatically determined to be compatible if they have:
     - Identical parameter names
     - Identical parameter shapes
-    
+
     This allows for flexible hyperparameter search where users can search over any
     parameters they want, and ModelBatch will automatically batch together models
     that can be trained simultaneously.
-    
+
     Args:
-        partial_batch_timeout_factor: Factor of batch_timeout to wait for partial batches 
+        partial_batch_timeout_factor: Factor of batch_timeout to wait for partial batches
                                      when larger batches exist (default: 0.5)
-        min_accumulation_time: Minimum time to wait before executing partial batches 
+        min_accumulation_time: Minimum time to wait before executing partial batches
                               when no larger batches exist (default: 10.0 seconds)
-        periodic_execution_interval: Execute partial batches every N trials to prevent 
+        periodic_execution_interval: Execute partial batches every N trials to prevent
                                     starvation (default: 10)
     """
 
     def __init__(
         self,
         study: Study,
-        model_factory: Callable[[Dict[str, Any]], nn.Module],
-        constraint_spec: Optional[ConstraintSpec] = None,
+        model_factory: Callable[[dict[str, Any]], nn.Module],
+        constraint_spec: ConstraintSpec | None = None,
         min_models_per_batch: int = 1,
-        max_models_per_batch: Optional[int] = None,
-        batch_timeout: Optional[float] = 60.0,
+        max_models_per_batch: int | None = None,
+        batch_timeout: float | None = 60.0,
         partial_batch_timeout_factor: float = 0.5,
         min_accumulation_time: float = 10.0,
         periodic_execution_interval: int = 10,
@@ -612,7 +617,7 @@ class ModelBatchStudy:
             periodic_execution_interval=periodic_execution_interval,
         )
 
-    def suggest_parameters(self, trial: Trial) -> Dict[str, Any]:
+    def suggest_parameters(self, trial: Trial) -> dict[str, Any]:
         """Suggest parameters for a trial using Optuna's suggest API."""
         # This should be overridden by user to define parameter space
         raise NotImplementedError(
@@ -630,7 +635,7 @@ class ModelBatchStudy:
         self,
         progress_bar: OptunaBatchProgressBar,
         trial: Trial,
-        trial_params: Dict[str, Any],
+        trial_params: dict[str, Any],
         batch_group: BatchGroup
     ) -> None:
         """Update progress bar with trial and batch group information."""
@@ -657,14 +662,15 @@ class ModelBatchStudy:
 
     def optimize(
         self,
-        objective_fn: Callable[[ModelBatch, List[Dict[str, Any]]], List[float]],
-        timeout: Optional[float] = None,
-        n_trials: Optional[int] = None,
+        objective_fn: Callable[[ModelBatch, list[dict[str, Any]]], list[float]],
+        timeout: float | None = None,
+        n_trials: int | None = None,
+        *,
         show_progress_bar: bool = True,
     ) -> None:
         """
         Run hyperparameter optimization with ModelBatch integration.
-        
+
         Args:
             objective_fn: Function that trains ModelBatch and returns per-trial metrics
             timeout: Maximum time for optimization
@@ -694,7 +700,7 @@ class ModelBatchStudy:
                 # Ask for new trial
                 try:
                     trial = self.study.ask()
-                except:
+                except Exception:  # noqa: BLE001
                     break  # Study is complete
 
                 # Suggest parameters and create model
@@ -724,13 +730,13 @@ class ModelBatchStudy:
 
     def _execute_ready_batches_if_needed(
         self,
-        objective_fn: Callable[[ModelBatch, List[Dict[str, Any]]], List[float]],
-        progress_bar: Optional[OptunaBatchProgressBar],
+        objective_fn: Callable[[ModelBatch, list[dict[str, Any]]], list[float]],
+        progress_bar: OptunaBatchProgressBar | None,
         trials_created: int
     ) -> None:
         """
         Execute ready batches using smarter coordination to prevent race conditions.
-        
+
         This method implements better ask-and-tell coordination by:
         1. Only executing full batches immediately
         2. Delaying execution of partial batches to allow more trials to accumulate
@@ -773,8 +779,8 @@ class ModelBatchStudy:
     def _execute_batch(
         self,
         batch_group: BatchGroup,
-        objective_fn: Callable[[ModelBatch, List[Dict[str, Any]]], List[float]],
-        progress_bar: Optional[OptunaBatchProgressBar] = None
+        objective_fn: Callable[[ModelBatch, list[dict[str, Any]]], list[float]],
+        progress_bar: OptunaBatchProgressBar | None = None
     ) -> None:
         """Execute training for a batch group."""
         try:
@@ -806,12 +812,8 @@ class ModelBatchStudy:
 
                 # Report actual metrics to the study
                 for trial, metric in zip(batch_group.trials, metrics):
-                    try:
-                        self.study.tell(trial, metric)  # type: ignore
-                    except Exception:
-
-                        # Handle cases where trial might already be finished
-                        pass
+                    with contextlib.suppress(Exception):
+                        self.study.tell(trial, metric)
 
                 # Update progress bar
                 if progress_bar:
@@ -821,16 +823,14 @@ class ModelBatchStudy:
             batch_group.state = BatchState.FAILED
             # Report failure for all trials in batch
             for trial in batch_group.trials:
-                try:
-                    self.study.tell(trial, state=TrialState.FAIL)  # type: ignore
-                except:
-                    pass
+                with contextlib.suppress(Exception):
+                    self.study.tell(trial, state=TrialState.FAIL)
             raise
 
     def _execute_remaining_batches(
         self,
-        objective_fn: Callable[[ModelBatch, List[Dict[str, Any]]], List[float]],
-        progress_bar: Optional[OptunaBatchProgressBar] = None
+        objective_fn: Callable[[ModelBatch, list[dict[str, Any]]], list[float]],
+        progress_bar: OptunaBatchProgressBar | None = None
     ) -> None:
         """Execute any remaining pending or ready batches."""
         remaining_batches = list(self.trial_batcher.batch_groups.values())
@@ -842,13 +842,13 @@ class ModelBatchStudy:
                     progress_bar.start_batch_execution(batch_group.group_id)
                 self._execute_batch(batch_group, objective_fn, progress_bar)
 
-    def get_optimization_summary(self) -> Dict[str, Any]:
+    def get_optimization_summary(self) -> dict[str, Any]:
         """Get summary of optimization process."""
         batch_status = self.trial_batcher.get_batch_status()
 
         return {
             "total_trials": len(self.study.trials),
-            "completed_trials": len([t for t in self.study.trials if t.state == TrialState.COMPLETE]),  # type: ignore
-            "failed_trials": len([t for t in self.study.trials if t.state == TrialState.FAIL]),  # type: ignore
+            "completed_trials": len([t for t in self.study.trials if t.state == TrialState.COMPLETE]),
+            "failed_trials": len([t for t in self.study.trials if t.state == TrialState.FAIL]),
             **batch_status,
         }

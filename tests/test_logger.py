@@ -242,21 +242,20 @@ class TestLoggerManager:
             handler_calls = mock_root.addHandler.call_args_list
             assert len(handler_calls) == 1
 
-    def test_environment_variables(self):
+    def test_environment_variables(self, tmp_path):
         """Test environment variable configuration."""
         with patch.dict(os.environ, {
             "LOG_LEVEL": "WARNING",
             "LOG_FORMAT": "json",
-            "LOG_FILE": "/tmp/test.log"
-        }):
-            with patch("logging.getLogger") as mock_get_logger:
-                mock_root = MagicMock()
-                mock_get_logger.return_value = mock_root
+            "LOG_FILE": str(tmp_path / "test.log"),
+        }), patch("logging.getLogger") as mock_get_logger:
+            mock_root = MagicMock()
+            mock_get_logger.return_value = mock_root
 
-                self.manager.configure()
+            self.manager.configure()
 
-                # Should use environment values
-                mock_root.setLevel.assert_called_once()
+            # Should use environment values
+            mock_root.setLevel.assert_called_once()
 
     def test_get_logger_creates_context_logger(self):
         """Test that get_logger returns ContextLogger instances."""
@@ -391,7 +390,7 @@ class TestIntegration:
     def test_modelbatch_module_integration(self):
         """Test integration with modelbatch module imports."""
         # This should not raise any import errors
-        from src.modelbatch import (
+        from src.modelbatch import (  # noqa: PLC0415
             get_core_logger,
             get_logger,
             get_optuna_logger,
@@ -405,9 +404,10 @@ class TestIntegration:
         training_logger = get_training_logger()
 
         # All should be ContextLogger instances
-        assert all(isinstance(l, ContextLogger) for l in [
-            logger, core_logger, optuna_logger, training_logger
-        ])
+        assert all(
+            isinstance(logger_obj, ContextLogger)
+            for logger_obj in [logger, core_logger, optuna_logger, training_logger]
+        )
 
     def test_environment_configuration_integration(self):
         """Test environment-based configuration."""

@@ -42,10 +42,10 @@ def train_one_epoch(
     total_loss = 0.0
     num_batches = 0
 
-    for step, (inputs, targets) in enumerate(train_loader):
+    for step, (batch_inputs, batch_targets) in enumerate(train_loader):
         # Move data to device
-        inputs = inputs.to(device)
-        targets = targets.to(device)
+        inputs = batch_inputs.to(device)
+        targets = batch_targets.to(device)
 
         # Zero gradients
         optimizer.zero_grad()
@@ -114,10 +114,10 @@ def evaluate_model_batch(
     num_batches = 0
 
     with torch.no_grad():
-        for step, (inputs, targets) in enumerate(val_loader):
+        for step, (batch_inputs, batch_targets) in enumerate(val_loader):
             # Move data to device
-            inputs = inputs.to(device)
-            targets = targets.to(device)
+            inputs = batch_inputs.to(device)
+            targets = batch_targets.to(device)
 
             # Forward pass
             outputs = model_batch(inputs)
@@ -157,10 +157,7 @@ def compute_accuracy(outputs: torch.Tensor, targets: torch.Tensor) -> torch.Tens
         Per-model accuracies [num_models]
     """
     # Get predictions
-    if outputs.dim() == 3:  # Classification case
-        predictions = outputs.argmax(dim=-1)  # [num_models, batch_size]
-    else:
-        predictions = outputs  # Assume already processed
+    predictions = outputs.argmax(dim=-1) if outputs.dim() == 3 else outputs
 
     # Handle target broadcasting
     if targets.dim() == 1:

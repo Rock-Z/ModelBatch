@@ -10,6 +10,8 @@ import warnings
 
 import torch
 
+from .core import ModelBatch
+
 
 class Callback(ABC):
     """Base class for ModelBatch callbacks."""
@@ -19,18 +21,20 @@ class Callback(ABC):
         self,
         model_batch: ModelBatch,
         step: int,
-        metrics: dict[str, float],
+        _metrics: dict[str, float],
     ) -> None:
         """Called after each training step."""
 
+    @abstractmethod
     def on_validation_step(
         self,
-        model_batch: ModelBatch,
+        _model_batch: ModelBatch,
         step: int,
         metrics: dict[str, float],
     ) -> None:
         """Called after each validation step."""
 
+    @abstractmethod
     def on_epoch_end(
         self,
         model_batch: ModelBatch,
@@ -75,6 +79,7 @@ class CallbackPack:
         for callback in self.callbacks:
             callback.on_train_step(model_batch, step, metrics)
 
+    @abstractmethod
     def on_validation_step(
         self,
         model_batch: ModelBatch,
@@ -88,6 +93,7 @@ class CallbackPack:
         for callback in self.callbacks:
             callback.on_validation_step(model_batch, step, metrics)
 
+    @abstractmethod
     def on_epoch_end(
         self,
         model_batch: ModelBatch,
@@ -126,7 +132,7 @@ class NaNCallback(Callback):
         self,
         model_batch: ModelBatch,
         step: int,
-        metrics: dict[str, float],
+        _metrics: dict[str, float],
     ) -> None:
         """Check for NaN losses and take action."""
         if model_batch.latest_losses is None:
@@ -159,7 +165,7 @@ class NaNCallback(Callback):
         for stacked_param in model_batch.stacked_params.values():
             if stacked_param[model_idx].grad is not None:
                 stacked_param[model_idx].grad.zero_()
-            stacked_param[model_idx].requires_grad_(False)
+            stacked_param[model_idx].requires_grad_(requires_grad=False)
 
     def _reset_model(self, model_batch: ModelBatch, model_idx: int) -> None:
         """Reset a model to its initial state using its own method if available."""
@@ -187,6 +193,7 @@ class MetricsLogger(Callback):
     def __init__(
         self,
         log_frequency: int = 100,
+        *,
         log_to_console: bool = True,
         logger: Callable | None = None,
     ):
@@ -205,7 +212,7 @@ class MetricsLogger(Callback):
 
     def on_train_step(
         self,
-        model_batch: ModelBatch,
+        _model_batch: ModelBatch,
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -215,9 +222,10 @@ class MetricsLogger(Callback):
         if self.step_count % self.log_frequency == 0:
             self._log_metrics(metrics, step, "train")
 
+    @abstractmethod
     def on_validation_step(
         self,
-        model_batch: ModelBatch,
+        _model_batch: ModelBatch,
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -256,17 +264,17 @@ class WandbCallback(Callback):
             run_name: Optional run name
         """
         try:
-            import wandb
+            import wandb  # noqa: PLC0415
 
             self.wandb = wandb
-        except ImportError:
-            raise ImportError("wandb package required for WandbCallback")
+        except ImportError as err:
+            raise ImportError("wandb package required for WandbCallback") from err
 
         self.project = project
         self.run_name = run_name
         self.run = None
 
-    def init_run(self, config: Dict[str, Any] | None = None) -> None:
+    def init_run(self, config: dict[str, Any] | None = None) -> None:
         """Initialize W&B run."""
         self.run = self.wandb.init(
             project=self.project,
@@ -276,7 +284,7 @@ class WandbCallback(Callback):
 
     def on_train_step(
         self,
-        model_batch: ModelBatch,
+        _model_batch: ModelBatch,
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -301,9 +309,10 @@ class WandbCallback(Callback):
 
         self.wandb.log(log_dict, step=step)
 
+    @abstractmethod
     def on_validation_step(
         self,
-        model_batch: ModelBatch,
+        _model_batch: ModelBatch,
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -328,15 +337,17 @@ class TensorBoardCallback(Callback):
             log_dir: Directory for TensorBoard logs
         """
         try:
-            from torch.utils.tensorboard import SummaryWriter
+            from torch.utils.tensorboard import SummaryWriter  # noqa: PLC0415
 
             self.writer = SummaryWriter(log_dir)
-        except ImportError:
-            raise ImportError("tensorboard package required for TensorBoardCallback")
+        except ImportError as err:
+            raise ImportError(
+                "tensorboard package required for TensorBoardCallback"
+            ) from err
 
     def on_train_step(
         self,
-        model_batch: ModelBatch,
+        _model_batch: ModelBatch,
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -351,6 +362,7 @@ class TensorBoardCallback(Callback):
             self.writer.add_scalar("train/loss_min", min(losses), step)
             self.writer.add_scalar("train/loss_max", max(losses), step)
 
+    @abstractmethod
     def on_validation_step(
         self,
         model_batch: ModelBatch,
@@ -368,6 +380,7 @@ class TensorBoardCallback(Callback):
 
 def create_default_callbacks(
     log_frequency: int = 100,
+    *,
     handle_nan: bool = True,
     log_to_console: bool = True,
 ) -> CallbackPack:

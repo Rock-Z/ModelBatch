@@ -4,6 +4,7 @@ Core ModelBatch implementation using torch.vmap for vectorized training.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 import torch
@@ -14,11 +15,11 @@ from torch.func import functional_call, stack_module_state
 def _check_models_compatible(model1: nn.Module, model2: nn.Module) -> tuple[bool, str]:
     """
     Check if two models have compatible structure for ModelBatch.
-    
+
     Args:
         model1: First model to compare
         model2: Second model to compare
-        
+
     Returns:
         Tuple of (is_compatible: bool, error_message: str)
         If compatible, error_message will be empty string.
@@ -50,7 +51,7 @@ class ModelBatch(nn.Module):
         shared_input: If True, all models receive the same input data
     """
 
-    def __init__(self, models: list[nn.Module], shared_input: bool = True):
+    def __init__(self, models: list[nn.Module], *, shared_input: bool = True):
         super().__init__()
 
         if not models:
@@ -277,8 +278,6 @@ class ModelBatch(nn.Module):
 
     def save_all(self, path: str) -> None:
         """Save all model states to directory."""
-        from pathlib import Path
-
         path_obj = Path(path)
         path_obj.mkdir(parents=True, exist_ok=True)
 
@@ -288,8 +287,6 @@ class ModelBatch(nn.Module):
 
     def load_all(self, path: str) -> None:
         """Load all model states from directory."""
-        from pathlib import Path
-
         path_obj = Path(path)
         states = []
         for i in range(self.num_models):
@@ -306,7 +303,7 @@ class ModelBatch(nn.Module):
             self.func_model = torch.compile(self.func_model, **kwargs)
             self._compiled = True
 
-    def metrics(self) -> Dict[str, float]:
+    def metrics(self) -> dict[str, float]:
         """Get per-model metrics (losses)."""
         if self.latest_losses is None:
             return {}

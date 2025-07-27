@@ -5,10 +5,11 @@ This demo shows how to use ModelBatch with Optuna for comprehensive
 hyperparameter search on CIFAR-10, including model architecture,
 learning rates, and training hyperparameters.
 """
+from __future__ import annotations
 
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import torch
 from torch import nn
@@ -17,16 +18,18 @@ from torch.utils.data import DataLoader
 import torchvision
 from torchvision import transforms
 
+DEFAULT_DEVICE = torch.device("cpu")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from modelbatch import ModelBatch, OptimizerFactory  # noqa: E402
+from modelbatch.optuna_integration import ModelBatchStudy  # noqa: E402
 
 try:
     import optuna
 except ImportError:
     print("Optuna not available. Install with: pip install optuna")
     sys.exit(1)
-
-from modelbatch import ModelBatch, OptimizerFactory
-from modelbatch.optuna_integration import ModelBatchStudy
 
 
 class CIFAR10CNN(nn.Module):
@@ -55,7 +58,6 @@ class CIFAR10CNN(nn.Module):
         for _ in range(num_conv_layers):
             conv_output_size = conv_output_size // 2
 
-        final_conv_channels = conv2_channels if num_conv_layers >= 2 else conv1_channels
 
         # Build convolutional layers
         layers = []
@@ -88,11 +90,10 @@ class CIFAR10CNN(nn.Module):
         x = x.view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
-        x = self.fc2(x)
-        return x
+        return self.fc2(x)
 
 
-def create_model(params: Dict[str, Any]) -> nn.Module:
+def create_model(params: dict[str, Any]) -> nn.Module:
     """Factory function to create models based on hyperparameters."""
     # Always use CNN model
     device = params.get("device", torch.device("cpu"))
@@ -107,7 +108,7 @@ def create_model(params: Dict[str, Any]) -> nn.Module:
     return model.to(device)
 
 
-def load_cifar10_data(batch_size: int = 128, num_samples: Optional[int] = None):
+def load_cifar10_data(batch_size: int = 128, num_samples: int | None = None):
     """Load CIFAR-10 dataset with data augmentation."""
     transform_train = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
@@ -141,12 +142,12 @@ def load_cifar10_data(batch_size: int = 128, num_samples: Optional[int] = None):
 
 def train_objective(
     model_batch: ModelBatch,
-    configs: List[Dict[str, Any]],
+    configs: list[dict[str, Any]],
     trainloader: DataLoader,
     testloader: DataLoader,
     num_epochs: int = 3,
-    device: torch.device = torch.device("cpu"),
-) -> List[float]:
+    device: torch.device = DEFAULT_DEVICE,
+) -> list[float]:
     """Training objective function for ModelBatch."""
     model_batch.train()
 
@@ -156,14 +157,15 @@ def train_objective(
 
     criterion = nn.CrossEntropyLoss()
 
-    for epoch in range(num_epochs):
+    for _epoch in range(num_epochs):
         running_loss = 0.0
         for batch_idx, (data, target) in enumerate(trainloader):
-            data, target = data.to(device), target.to(device)
+            batch_data = data.to(device)
+            batch_target = target.to(device)
 
             optimizer.zero_grad()
-            outputs = model_batch(data)
-            loss = model_batch.compute_loss(outputs, target, criterion)
+            outputs = model_batch(batch_data)
+            loss = model_batch.compute_loss(outputs, batch_target, criterion)
             loss.backward()
             optimizer.step()
 
@@ -175,26 +177,25 @@ def train_objective(
 
     # Evaluate on test set
     model_batch.eval()
-    accuracies = []
 
     with torch.no_grad():
         correct = torch.zeros(model_batch.num_models).to(device)
         total = 0
 
         for data, target in testloader:
-            data, target = data.to(device), target.to(device)
-            outputs = model_batch(data)
+            batch_data = data.to(device)
+            batch_target = target.to(device)
+            target_expanded = batch_target.unsqueeze(0).expand(model_batch.num_models, -1)
+            outputs = model_batch(batch_data)
             _, predicted = torch.max(outputs, 2)
-            target_expanded = target.unsqueeze(0).expand(model_batch.num_models, -1)
             correct += (predicted == target_expanded).sum(dim=1).float()
-            total += target.size(0)
+            total += batch_target.size(0)
 
             # Limit test batches
             if total >= 1000:
                 break
 
-    accuracies = (100 * correct / total).cpu().tolist()
-    return accuracies
+    return (100 * correct / total).cpu().tolist()
 
 
 def run_advanced_search():
@@ -211,7 +212,7 @@ def run_advanced_search():
     class AdvancedStudy(ModelBatchStudy):
         def suggest_parameters(self, trial):
             # CNN-only parameters
-            params: Dict[str, Any] = {
+            params: dict[str, Any] = {
                 "data.batch_size": 64,
                 "device": torch.device("cuda" if torch.cuda.is_available() else "cpu")
             }

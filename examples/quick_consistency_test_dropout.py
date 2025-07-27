@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Quick consistency test - runs extremely fast for rapid debugging.
 """
@@ -23,7 +22,7 @@ from modelbatch.utils import create_identical_models, random_init_fn
 def set_seeds(seed: int = 6235):
     """Set random seeds for reproducibility."""
     torch.manual_seed(seed)
-    np.random.seed(seed)
+    np.random.default_rng(seed)
 
 
 class TinyMLP(nn.Module):
@@ -43,7 +42,7 @@ class TinyMLP(nn.Module):
         return self.layers(x)
 
 
-def quick_test():
+def quick_test():  # noqa: PLR0915
     """Run a really quick consistency test."""
     print("⚡ Quick Consistency Test")
     print("=" * 50)
@@ -66,10 +65,10 @@ def quick_test():
     print(f"Data: {num_samples} samples")
 
     # Create simple synthetic data
-    X = torch.randn(num_samples, input_size)
+    x = torch.randn(num_samples, input_size)
     # Create clear patterns for each class
-    X[: num_samples // 2, 0] = 2.0  # Class 0 pattern
-    X[num_samples // 2 :, 1] = 2.0  # Class 1 pattern
+    x[: num_samples // 2, 0] = 2.0  # Class 0 pattern
+    x[num_samples // 2 :, 1] = 2.0  # Class 1 pattern
     y = torch.cat(
         [
             torch.zeros(num_samples // 2, dtype=torch.long),
@@ -77,7 +76,7 @@ def quick_test():
         ]
     )
 
-    dataset = TensorDataset(X, y)
+    dataset = TensorDataset(x, y)
     dataloader = DataLoader(
         dataset, batch_size=batch_size, shuffle=False
     )  # Do not shuffle since random shuffling also uses random state

@@ -26,9 +26,10 @@ def is_amp_supported():
     try:
         device = torch.device("cuda")
         torch.tensor([1.0], dtype=torch.float16, device=device)
-        return True
     except (RuntimeError, AssertionError):
         return False
+    else:
+        return True
 
 
 # Skip all AMP tests if not supported
@@ -71,7 +72,7 @@ def setup_amp_test():
 
 
 @pytest.mark.parametrize(
-    "model_config,num_steps,optimizer_class,optimizer_kwargs",
+    ("model_config", "num_steps", "optimizer_class", "optimizer_kwargs"),
     [
         # Basic AMP functionality with different model configs
         ({"input_size": 784, "hidden_size": 64, "num_classes": 10}, 1, torch.optim.Adam, {"lr": 0.001}),
@@ -112,22 +113,24 @@ def test_amp_training_comprehensive(model_config, num_steps, optimizer_class, op
     initial_params = [p.clone() for p in model_batch.parameters()]
     losses = []
 
-    for idx, (data, target) in enumerate(loader):
+    for idx, (batch_data, batch_target) in enumerate(loader):
         if idx >= num_steps:
             break
-        data, target = data.to(device), target.to(device)
+        batch_data, batch_target = batch_data.to(device), batch_target.to(device)  # noqa: PLW2901
 
         optimizer.zero_grad()
         with torch.amp.autocast("cuda"):
-            outputs = model_batch(data)
-            loss = model_batch.compute_loss(outputs, target, F.cross_entropy)
+            outputs = model_batch(batch_data)
+            loss = model_batch.compute_loss(
+                outputs, batch_target, F.cross_entropy
+            )
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
         losses.append(loss.item())
 
     # Verify results
-    assert all(not (np.isnan(l) or np.isinf(l)) for l in losses)
+    assert all(not (np.isnan(val) or np.isinf(val)) for val in losses)
 
     if num_steps > 1:
         # Check parameters changed
@@ -193,7 +196,7 @@ def test_amp_fp32_consistency():
     assert abs(loss_amp.item() - loss_fp32.item()) < 1.0
 
 
-@pytest.mark.parametrize("num_models,input_size,scaling_factors", [
+@pytest.mark.parametrize(("num_models", "input_size", "scaling_factors"), [
     (2, 784, [1.0, 2.0]),
     (3, 512, [0.5, 1.0, 2.0]),
     (4, 1024, [0.1, 1.0, 10.0, 5.0]),
@@ -276,7 +279,7 @@ def test_batched_vs_individual_consistency(num_models, input_size, scaling_facto
 
 
 @pytest.mark.skip("Currently skipping support for consistent single/batched AMP overflow handling")
-def test_amp_overflow_handling(input_size):
+def test_amp_overflow_handling(input_size):  # noqa: PLR0915
     """Test AMP handles gradient overflow correctly with both individual and batched training."""
     device = torch.device("cuda")
     batch_size = 32

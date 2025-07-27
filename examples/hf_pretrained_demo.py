@@ -1,5 +1,4 @@
 """Demo: training small GPT2 language models in a ``HFModelBatch``."""
-# ruff: noqa: INP001
 
 from __future__ import annotations
 
