@@ -28,7 +28,7 @@ def set_random_seeds(seed: int = 6235):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     random.seed(seed)
-    np.random.default_rng(seed)
+    np.random.seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -95,7 +95,7 @@ def load_cifar10_data(
 
     def seed_worker(_worker_id):
         worker_seed = torch.initial_seed() % 2**32
-        np.random.default_rng(worker_seed)
+        np.random.seed(worker_seed)
         random.seed(worker_seed)
 
     g = torch.Generator()

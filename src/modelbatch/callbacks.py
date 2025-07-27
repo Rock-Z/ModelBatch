@@ -28,7 +28,7 @@ class Callback(ABC):
     @abstractmethod
     def on_validation_step(
         self,
-        _model_batch: ModelBatch,
+        model_batch: ModelBatch,
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -79,7 +79,6 @@ class CallbackPack:
         for callback in self.callbacks:
             callback.on_train_step(model_batch, step, metrics)
 
-    @abstractmethod
     def on_validation_step(
         self,
         model_batch: ModelBatch,
@@ -93,7 +92,6 @@ class CallbackPack:
         for callback in self.callbacks:
             callback.on_validation_step(model_batch, step, metrics)
 
-    @abstractmethod
     def on_epoch_end(
         self,
         model_batch: ModelBatch,
@@ -212,7 +210,7 @@ class MetricsLogger(Callback):
 
     def on_train_step(
         self,
-        _model_batch: ModelBatch,
+        model_batch: ModelBatch, # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -222,10 +220,9 @@ class MetricsLogger(Callback):
         if self.step_count % self.log_frequency == 0:
             self._log_metrics(metrics, step, "train")
 
-    @abstractmethod
     def on_validation_step(
         self,
-        _model_batch: ModelBatch,
+        model_batch: ModelBatch, # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -284,7 +281,7 @@ class WandbCallback(Callback):
 
     def on_train_step(
         self,
-        _model_batch: ModelBatch,
+        model_batch: ModelBatch, # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -309,10 +306,9 @@ class WandbCallback(Callback):
 
         self.wandb.log(log_dict, step=step)
 
-    @abstractmethod
     def on_validation_step(
         self,
-        _model_batch: ModelBatch,
+        model_batch: ModelBatch, # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -347,7 +343,7 @@ class TensorBoardCallback(Callback):
 
     def on_train_step(
         self,
-        _model_batch: ModelBatch,
+        model_batch: ModelBatch, # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -362,10 +358,9 @@ class TensorBoardCallback(Callback):
             self.writer.add_scalar("train/loss_min", min(losses), step)
             self.writer.add_scalar("train/loss_max", max(losses), step)
 
-    @abstractmethod
     def on_validation_step(
         self,
-        model_batch: ModelBatch,
+        model_batch: ModelBatch, # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:

@@ -22,7 +22,7 @@ from modelbatch.utils import create_identical_models, random_init_fn
 def set_seeds(seed: int = 6235):
     """Set random seeds for reproducibility."""
     torch.manual_seed(seed)
-    np.random.default_rng(seed)
+    np.random.seed(seed)
 
 
 class TinyMLP(nn.Module):
