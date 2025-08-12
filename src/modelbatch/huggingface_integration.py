@@ -189,3 +189,9 @@ class ModelBatchTrainer(HFTrainerMixin, Trainer):
         self.model_batch = HFModelBatch(models)
         super().__init__(model=self.model_batch, **trainer_kwargs)
         self.optimizer = self.create_optimizer()
+
+    # Avoid saving checkpoints since ModelBatch shares tensor storage across
+    # modules, which safetensors refuses to serialize. This keeps demos/tests
+    # simple and non-interactive.
+    def save_model(self, output_dir: str | None = None, _internal_call: bool = False) -> None:  # type: ignore[override]
+        return

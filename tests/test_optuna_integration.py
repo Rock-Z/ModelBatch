@@ -26,28 +26,16 @@ from modelbatch.optuna_integration import (
     TrialBatcher,
 )
 
-
-class SimpleModel(nn.Module):
-    """Simple model for testing."""
-
-    def __init__(self, input_size: int = 10, hidden_size: int = 20, dropout_rate: float = 0.1):
-        super().__init__()
-        self.fc1 = nn.Linear(input_size, hidden_size)
-        self.dropout = nn.Dropout(dropout_rate)
-        self.fc2 = nn.Linear(hidden_size, 1)
-
-    def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = self.dropout(x)
-        return self.fc2(x)
+from .test_models import SimpleMLP
 
 
 def create_model(params: dict[str, Any]) -> nn.Module:
     """Factory function for test models."""
-    return SimpleModel(
+    # Note: SimpleMLP does not use dropout; we ignore model.dropout_rate if provided.
+    return SimpleMLP(
         input_size=params.get("model.input_size", 10),
         hidden_size=params.get("model.hidden_size", 20),
-        dropout_rate=params.get("model.dropout_rate", 0.1),
+        output_size=1,
     )
 
 
@@ -117,7 +105,7 @@ class TestBatchGroup:
 
         # Create mock trial (just use a dict for testing)
         trial = {"id": 0, "params": {}}
-        model = SimpleModel()
+        model = SimpleMLP()
         params = {"optimizer.lr": 0.001, "model.dropout_rate": 0.1}
 
         group.add_trial(trial, params, model)
@@ -136,7 +124,7 @@ class TestBatchGroup:
         # Add trials to make it ready
         for i in range(3):
             trial = {"id": i, "params": {}}
-            model = SimpleModel()
+            model = SimpleMLP()
             group.add_trial(trial, {}, model)
 
         assert group.is_ready(min_models_per_batch=2) is True
@@ -149,7 +137,7 @@ class TestBatchGroup:
         # Add trials with different learning rates
         for lr in [0.1, 0.01, 0.001]:
             trial = {"id": len(group.trials), "params": {}}
-            model = SimpleModel()
+            model = SimpleMLP()
             params = {"optimizer.lr": lr, "model.hidden_size": 64}
             group.add_trial(trial, params, model)
 
@@ -184,14 +172,14 @@ class TestTrialBatcher:
         # Group 1: hidden_size=64
         for lr in [0.1, 0.01]:
             trial = study.ask()
-            model = SimpleModel(hidden_size=64)
+            model = SimpleMLP(hidden_size=64)
             params = {"model.hidden_size": 64, "optimizer.lr": lr}
             batcher.add_trial(trial, params, model)
 
         # Group 2: hidden_size=128
         for lr in [0.1, 0.01]:
             trial = study.ask()
-            model = SimpleModel(hidden_size=128)
+            model = SimpleMLP(hidden_size=128)
             params = {"model.hidden_size": 128, "optimizer.lr": lr}
             batcher.add_trial(trial, params, model)
 
@@ -213,7 +201,7 @@ class TestTrialBatcher:
 
         for i in range(5):
             trial = study.ask()
-            model = SimpleModel(hidden_size=64 if i < 3 else 128)
+            model = SimpleMLP(hidden_size=64 if i < 3 else 128)
             params = {"model.hidden_size": 64 if i < 3 else 128}
             batcher.add_trial(trial, params, model)
 
@@ -364,7 +352,7 @@ class TestMemoryEfficiency:
 
         def memory_efficient_factory(params):
             # Ensure we're not creating unnecessary copies
-            return SimpleModel(**{k.split(".")[-1]: v for k, v in params.items()})
+            return SimpleMLP(**{k.split(".")[-1]: v for k, v in params.items()})
 
         batcher = TrialBatcher(spec)
         study = optuna.create_study()

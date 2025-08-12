@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import sys
 
 import torch
+from torch import nn
 from torch.utils.data import Dataset
-from transformers import GPT2Config, GPT2LMHeadModel, TrainingArguments
+from transformers import GPT2Config, GPT2LMHeadModel
+from transformers.training_args import TrainingArguments
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelbatch.huggingface_integration import HFModelBatch, ModelBatchHFTrainer
+from modelbatch.huggingface_integration import ModelBatchTrainer
+from modelbatch.optimizer import create_adam_configs
 
 
 class RandomTextDataset(Dataset):
@@ -34,20 +38,27 @@ class RandomTextDataset(Dataset):
 def main() -> None:
     config = GPT2Config(n_layer=1, n_head=2, n_embd=32, n_positions=32, vocab_size=100)
     models = [GPT2LMHeadModel(config) for _ in range(2)]
-    batch = HFModelBatch(models)
-    batch.compute_loss_inside_forward = True
+
+    # Disable external reporting (e.g., wandb) for a clean demo run
+    os.environ.setdefault("WANDB_DISABLED", "true")
 
     args = TrainingArguments(
         output_dir="/tmp/hf_pretrained",  # noqa: S108
         num_train_epochs=1,
         per_device_train_batch_size=4,
         logging_steps=1,
+        report_to="none",
+        remove_unused_columns=False,
+        save_strategy="no",
     )
-    trainer = ModelBatchHFTrainer(
-        model_batch=batch,
+    optimizer_cfgs = create_adam_configs([1e-4, 2e-4])
+    trainer = ModelBatchTrainer(
+        models=models,
+        optimizer_configs=optimizer_cfgs,
         args=args,
-        train_dataset=RandomTextDataset(64, 8, config.vocab_size),
+        train_dataset=RandomTextDataset(1024, 8, config.vocab_size),
     )
+    trainer.model_batch.compute_loss_inside_forward = True
     trainer.train()
     print("done")
 
