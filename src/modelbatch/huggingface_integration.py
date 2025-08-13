@@ -70,23 +70,7 @@ class HFModelBatch(ModelBatch):
                     "All models must be HuggingFace PreTrainedModel instances"
                 )
         super().__init__(models, shared_input=shared_input)
-        self._verify_config_compatibility()
-
-    def _verify_config_compatibility(self) -> None:
-        if len(self.models) < 2:
-            return
-        attrs = [
-            "hidden_size",
-            "num_attention_heads",
-            "num_hidden_layers",
-            "intermediate_size",
-            "vocab_size",
-        ]
-        ref_cfg = self.models[0].config
-        for i, model in enumerate(self.models[1:], 1):
-            for attr in attrs:
-                if getattr(ref_cfg, attr, None) != getattr(model.config, attr, None):
-                    raise ValueError(f"Model {i} differs in config field '{attr}'")
+        self._verify_model_compatibility(models)
 
     def forward(self, **kwargs) -> ModelOutput:  # type: ignore[name-defined]
         outputs = [model(**kwargs) for model in self.models]
