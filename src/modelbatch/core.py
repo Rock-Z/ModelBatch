@@ -79,11 +79,12 @@ class ModelBatch(nn.Module):
             self.stacked_params[name] = param_tensor
 
         # Register stacked buffers as PyTorch buffers
-        self.stacked_buffers = {}
+        # Store mapping for dynamic buffer access to ensure proper device placement
+        self._buffer_mapping = {}
         for name, buffer in stacked_buffers.items():
             safe_name = name.replace(".", "_")
             self.register_buffer(f"stacked_buffer_{safe_name}", buffer)
-            self.stacked_buffers[name] = getattr(self, f"stacked_buffer_{safe_name}")
+            self._buffer_mapping[name] = f"stacked_buffer_{safe_name}"
 
         # Store the functional form of the first model for vmap
         self.func_model = models[0]
@@ -93,6 +94,18 @@ class ModelBatch(nn.Module):
 
         # Enable/disable compilation
         self._compiled = False
+
+    @property
+    def stacked_buffers(self) -> dict[str, torch.Tensor]:
+        """Return stacked buffer tensors.
+        
+        This property dynamically retrieves buffer tensors to ensure they reflect
+        the current device placement after calls to .to(device).
+        
+        Returns:
+            Dict mapping buffer names to their current tensor values.
+        """
+        return {name: getattr(self, attr_name) for name, attr_name in self._buffer_mapping.items()}
 
     def zero_grad(self, set_to_none: bool = True) -> None:
         """Clear gradients for all stacked parameters."""
