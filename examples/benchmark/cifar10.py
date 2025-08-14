@@ -19,7 +19,7 @@ from torchvision import transforms
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from benchmark_utils import (
+from utils import (
     set_random_seeds,
     evaluate_accuracy,
     train_sequential,

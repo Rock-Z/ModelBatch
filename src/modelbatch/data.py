@@ -60,7 +60,9 @@ class DataRouter:
                 raise ValueError("Indices required for indices mode")
 
             return self._route_by_indices(batch, indices)
-        return None
+        
+        else:
+            raise ValueError(f"Unknown mode: {self.mode}")
 
     def _route_by_mask(
         self,
@@ -78,7 +80,7 @@ class DataRouter:
                 )
 
         # Find maximum subset size
-        max_subset_size = max(mask.sum().item() for mask in masks)
+        max_subset_size = max(int(mask.sum().item()) for mask in masks)
 
         if max_subset_size == 0:
             raise ValueError("All masks are empty")
@@ -106,7 +108,15 @@ class DataRouter:
 
         # Validate indices
         for i, idx in enumerate(indices):
-            if idx.max() >= batch_size or idx.min() < 0:
+            # Allow empty index tensors; they simply contribute no samples
+            if idx.numel() == 0:
+                continue
+            # Ensure correct dtype for indexing
+            if idx.dtype not in (torch.long, torch.int64):
+                idx = idx.to(dtype=torch.long)
+                indices[i] = idx
+            # Bounds check
+            if idx.max().item() >= batch_size or idx.min().item() < 0:
                 raise ValueError(
                     f"Indices {i} out of range for batch size {batch_size}"
                 )
@@ -167,14 +177,14 @@ class StratifiedDataRouter(DataRouter):
             List of index tensors, one per model
         """
         if num_classes is None:
-            num_classes = labels.max().item() + 1
+            num_classes = int(labels.max().item()) + 1
 
         if self.strategy == "round_robin":
             return self._round_robin_indices(labels)
         if self.strategy == "random":
             return self._random_indices(labels)
         if self.strategy == "class_based":
-            return self._class_based_indices(labels, num_classes)
+            return self._class_based_indices(labels, int(num_classes))
         raise ValueError(f"Unknown strategy: {self.strategy}")
 
     def _round_robin_indices(

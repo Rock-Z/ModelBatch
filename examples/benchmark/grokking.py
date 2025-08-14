@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader, Dataset
 # Make local src importable when running this example directly
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from benchmark_utils import (
+from utils import (
     set_random_seeds,
     evaluate_accuracy,
     train_sequential,
