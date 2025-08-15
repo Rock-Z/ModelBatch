@@ -58,7 +58,7 @@ class HFModelBatch(ModelBatch):
     def __init__(
         self,
         models: list[PreTrainedModel],
-        shared_input: bool = True,  # noqa: FBT001, FBT002
+        shared_input: bool = True,
     ) -> None:
         # Add explicit check for transformers availability
         if not HAS_TRANSFORMERS:

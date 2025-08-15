@@ -118,9 +118,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["S101", "ARG001", "PLR2004"]
-"examples/**/*" = ["T201", "S603", "S607"]
+"tests/test_compile.py" = ["BLE001", "FBT001", "FA102", "PT006", "PT018", "I001", "RUF100", "F401"]
+"examples/**/*" = ["T201", "S603", "S607", "F401", "F841", "ERA001", "RET504", "I001", "UP035"]
 "__init__.py" = ["F401"]
 "src/modelbatch/core.py" = ["FBT"]
+"src/modelbatch/huggingface_integration.py" = ["ARG002", "FBT001", "FBT002"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["modelbatch"]

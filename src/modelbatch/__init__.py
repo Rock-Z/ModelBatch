@@ -1,6 +1,6 @@
 """
-ModelBatch: Train hundreds to thousands of independent PyTorch models simultaneously
-on a single GPU using vectorized operations.
+ModelBatch: Train many independent PyTorch models simultaneously on a single GPU
+using vectorized operations.
 """
 
 __version__ = "0.1.0"

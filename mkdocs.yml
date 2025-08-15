@@ -1,5 +1,5 @@
 site_name: ModelBatch
-site_description: Train hundreds to thousands of independent PyTorch models simultaneously on a single GPU using vectorized operations
+site_description: Train many independent PyTorch models simultaneously on a single GPU using vectorized operations
 site_url: https://rock-z.github.io/ModelBatch/
 
 repo_name: rock-z/ModelBatch
@@ -21,6 +21,8 @@ theme:
 
 nav:
   - Home: index.md
+  - Getting Started: getting_started.md
+  - API Reference: api.md
   - Core Design: design.md
   - Implementation Summary: IMPLEMENTATION_SUMMARY.md
 
@@ -34,4 +36,4 @@ markdown_extensions:
       alternate_style: true
 
 plugins:
-  - search 
+  - search
