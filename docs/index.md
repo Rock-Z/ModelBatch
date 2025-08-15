@@ -1,12 +1,10 @@
 # ModelBatch
 
-**Train tens to hundreds of independent PyTorch models simultaneously on a single GPU using vectorized operations.**
-
-## Overview
+**Train many independent PyTorch models simultaneously on a single GPU using vectorized operations.**
 
 ModelBatch eliminates GPU waste by training multiple independent models in a single vectorized step using `torch.vmap`. Achieve near-linear speedup until VRAM or compute saturates.
 
-### Key Features
+## Key Features
 
 - **Massive Speedups**: almost linear speedup with correct setup
 - **Single GPU Efficiency**: Max out GPU utilization with many small models
@@ -14,53 +12,17 @@ ModelBatch eliminates GPU waste by training multiple independent models in a sin
 - **Framework Integration**: (Hopes to) work with HuggingFace, PyTorch Lightning
 - **Per-model Isolation**: Separate parameters, optimizers, and metrics
 
-## Quick Start
+## Getting Started
 
-### Installation
+New to ModelBatch? See the [getting started guide](getting_started.md) for installation, a basic example, and common development commands.
 
-This repo uses [uv](https://docs.astral.sh/uv/) for environment management.
+## API Reference
 
-```bash
-uv sync --dev
-uv pip install -e ".[dev]"
-```
+The [API reference](api.md) covers the core `ModelBatch` class, data routing helpers,
+and optimizer utilities.
 
-### Basic Usage
-
-```python
-import torch
-from modelbatch import ModelBatch
-
-# Create multiple models
-models = [SimpleNet() for _ in range(32)]
-
-# Wrap with ModelBatch
-mb = ModelBatch(models, lr_list=[0.001] * 32, optimizer_cls=torch.optim.Adam)
-
-# Train normally - but 32x faster!
-for batch in dataloader:
-    mb.zero_grad()
-    outputs = mb(batch)
-    loss = mb.compute_loss(outputs, targets)
-    loss.backward()
-    mb.step()
-```
-
-## Quick Commands
-
-```bash
-# Run demo
-uv run examples/simple_demo.py
-
-# Run tests  
-uv run -m pytest
-
-# Local docs
-uv run mkdocs serve
-```
-
-## Documentation
+## Additional Resources
 
 - **[Core Design](design.md)**: Architecture and goals
 - **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)**: Technical details & progress tracking
-- **[Development Workflow](../AGENTS.md)**: Instructions for development, LLMs and humans alike
+- **[Development Workflow](https://github.com/rock-z/ModelBatch/blob/main/AGENTS.md)**: Instructions for development, LLMs and humans alike

@@ -5,7 +5,7 @@ Callback system for ModelBatch monitoring and logging.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Callable
 import warnings
 
 import torch

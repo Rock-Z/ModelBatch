@@ -98,14 +98,16 @@ class ModelBatch(nn.Module):
     @property
     def stacked_buffers(self) -> dict[str, torch.Tensor]:
         """Return stacked buffer tensors.
-        
+
         This property dynamically retrieves buffer tensors to ensure they reflect
         the current device placement after calls to .to(device).
-        
+
         Returns:
             Dict mapping buffer names to their current tensor values.
         """
-        return {name: getattr(self, attr_name) for name, attr_name in self._buffer_mapping.items()}
+        return {
+            name: getattr(self, attr_name) for name, attr_name in self._buffer_mapping.items()
+        }
 
     def zero_grad(self, set_to_none: bool = True) -> None:
         """Clear gradients for all stacked parameters."""
