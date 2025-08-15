@@ -190,6 +190,7 @@ class TestSingleModelAccess:
             report_to=[],
             remove_unused_columns=False,
             save_strategy="no",
+            use_cpu=True,
         )
         os.environ["WANDB_DISABLED"] = "true"
         mb_trainer = modelbatch.huggingface_integration.ModelBatchTrainer(
@@ -217,6 +218,7 @@ class TestSingleModelAccess:
             report_to=[],
             remove_unused_columns=False,
             save_strategy="no",
+            use_cpu=True,
         )
         trainer = transformers.Trainer(
             model=single,
