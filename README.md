@@ -2,7 +2,6 @@
 
 **Train many independent PyTorch models simultaneously on a single GPU using vectorized operations.**
 
-[![Tests](https://github.com/your-username/ModelBatch/workflows/tests/badge.svg)](https://github.com/your-username/ModelBatch/actions)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch 2.0+](https://img.shields.io/badge/PyTorch-2.0+-orange.svg)](https://pytorch.org/)
 
@@ -32,7 +31,7 @@ models = [SimpleNet() for _ in range(num_models)]
 # Wrap with ModelBatch - that's it!
 mb = ModelBatch(models, lr_list=[0.001] * num_models, optimizer_cls=torch.optim.Adam)
 
-# Train normally, batched across models
+# Train normally (but many times faster!), batched across models
 for batch in dataloader:
     mb.zero_grad()
     outputs = mb(batch)
@@ -69,9 +68,7 @@ uv run mkdocs serve
 
 ## 📚 Documentation
 
-- **[Full Documentation](https://rock-z.github.io/ModelBatch/)**
-- **[Core Design](docs/design.md)**: Architecture and goals
-- **[Development Guide](AGENTS.md)**: Workflow and status
+See [docs](docs/index.md).
 
 ## 📄 License
 
