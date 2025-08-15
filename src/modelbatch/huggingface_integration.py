@@ -73,6 +73,7 @@ class HFModelBatch(ModelBatch):
         self._verify_model_compatibility(models)
 
     def forward(self, **kwargs) -> ModelOutput:  # type: ignore[name-defined]
+        kwargs.pop("num_items_in_batch", None)
         outputs = [model(**kwargs) for model in self.models]
         logits = torch.stack([out.logits for out in outputs])
         losses = None
@@ -177,5 +178,5 @@ class ModelBatchTrainer(HFTrainerMixin, Trainer):
     # Avoid saving checkpoints since ModelBatch shares tensor storage across
     # modules, which safetensors refuses to serialize. This keeps demos/tests
     # simple and non-interactive.
-    def save_model(self, output_dir: str | None = None, _internal_call: bool = False) -> None:  # type: ignore[override]
+    def save_model(self, output_dir: str | None = None, _internal_call: bool = False) -> None:  # type: ignore[override]  # noqa: ARG002, FBT001, FBT002
         return
