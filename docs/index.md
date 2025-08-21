@@ -23,6 +23,5 @@ and optimizer utilities.
 
 ## Additional Resources
 
-- **[Core Design](design.md)**: Architecture and goals
 - **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)**: Technical details & progress tracking
 - **[Development Workflow](https://github.com/rock-z/ModelBatch/blob/main/AGENTS.md)**: Instructions for development, LLMs and humans alike

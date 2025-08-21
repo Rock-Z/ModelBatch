@@ -13,14 +13,9 @@ jobs:
       - uses: actions/checkout@v4
       
       - uses: astral-sh/setup-uv@v3
-        
-      - name: Set up environment
-        run: |
-          uv venv
-          uv add --dev mkdocs mkdocs-material
           
       - name: Build documentation
-        run: uv run mkdocs build -s
+        run: uvx mkdocs build -s
         
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/main'
