@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ master ]
 
+# Add permissions for GitHub Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   docs:
     runs-on: ubuntu-latest
@@ -16,11 +22,10 @@ jobs:
         
       - name: Set up environment
         run: |
-          uv venv
-          uv add --dev mkdocs
+          uv sync --dev
           
       - name: Build documentation
-        run: uv run -m mkdocs build -s
+        run: uv run -m mkdocs build --strict
         
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/master'
