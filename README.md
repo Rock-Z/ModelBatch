@@ -13,6 +13,18 @@
 
 ### Installation
 
+From PyPI:
+
+```bash
+# recommended
+uv add modelbatch
+
+# alternative
+pip install modelbatch
+```
+
+From source:
+
 ```bash
 uv sync --dev
 uv pip install -e ".[dev]"
