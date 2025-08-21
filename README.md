@@ -7,7 +7,7 @@
 
 ## ⚠️ Current Status
 
-**ModelBatch is in active development with known issues.**
+**ModelBatch is still in active development. Core functionality is tested and working, but the API may be subject to change.**
 
 ## 🚀 Quick Start
 
@@ -42,6 +42,10 @@ for batch in dataloader:
 
 See [here](examples) for more examples.
 
+## 📚 Documentation
+
+See [docs](https://rock-z.github.io/ModelBatch/).
+
 ## 🛠️ Development
 
 ### Environment Setup
@@ -59,16 +63,9 @@ uv run -m pytest
 # Linting  
 uv run ruff check --fix . && uv run ruff format .
 
-# Type checking
-uv run mypy src tests
-
 # Documentation
 uv run mkdocs serve
 ```
-
-## 📚 Documentation
-
-See [docs](docs/index.md).
 
 ## 📄 License
 
