@@ -6,7 +6,7 @@ repo_name: rock-z/ModelBatch
 repo_url: https://github.com/rock-z/ModelBatch
 
 theme:
-  name: material
+  name: readthedocs
   palette:
     - scheme: default
       primary: blue
