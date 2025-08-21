@@ -5,6 +5,12 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: "Force build documentation"
+        required: false
+        default: false
 
 # Add permissions for GitHub Pages deployment
 permissions:
