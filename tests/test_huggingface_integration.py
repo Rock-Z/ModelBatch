@@ -38,6 +38,16 @@ class TestHFModelBatch:
         outputs = self.batch(**inputs)
         assert outputs.logits.shape[0] == len(self.models)
 
+    def test_forward_uses_native_hf_loss(self):
+        inputs = {
+            "input_ids": torch.randint(0, self.config.vocab_size, (4, 8)),
+            "attention_mask": torch.ones(4, 8),
+            "labels": torch.tensor([1, 0, 1, 0]),
+        }
+        outputs = self.batch(**inputs)
+        assert outputs.loss is not None
+        assert outputs.loss.ndim == 0
+
     def test_forward_uses_live_stacked_state(self):
         self.batch.eval()
         inputs = {
@@ -226,13 +236,16 @@ class TestSingleModelAccess:
             args=args,
             train_dataset=DummyDataset(),
         )
-        mb_trainer.model_batch.compute_loss_inside_forward = True
+        before_batch = (
+            mb_trainer.model_batch.stacked_params["classifier.weight"].detach().clone()
+        )
         mb_trainer.train()
-        # Simulate parameter update from training and sync to single model
-        with torch.no_grad():
-            mb_trainer.model_batch.stacked_params["classifier.weight"][0] += 1
         states = mb_trainer.model_batch.get_model_states()
         single.load_state_dict(states[0], strict=False)
+        assert not torch.allclose(
+            mb_trainer.model_batch.stacked_params["classifier.weight"].detach(),
+            before_batch,
+        )
         assert not torch.allclose(single.classifier.weight, before)
 
         # Train single model and verify new HFModelBatch sees updated parameters
@@ -311,6 +324,16 @@ class TestModelBatchTrainer:
             args=args,
             train_dataset=DummyDataset(),
         )
-        trainer.model_batch.compute_loss_inside_forward = True
+        before = (
+            trainer.model_batch.stacked_params["classifier.weight"].detach().clone()
+        )
+        states_before = trainer.model_batch.get_model_states()
         trainer.train()
         assert trainer.state.global_step == 1
+        after = trainer.model_batch.stacked_params["classifier.weight"].detach()
+        states_after = trainer.model_batch.get_model_states()
+        assert not torch.allclose(after, before)
+        assert not torch.allclose(
+            states_after[0]["classifier.weight"],
+            states_before[0]["classifier.weight"],
+        )

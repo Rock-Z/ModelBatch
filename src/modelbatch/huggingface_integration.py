@@ -9,14 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-# Import transformers first - this is the main requirement
 try:
-    from transformers import (
-        PreTrainedModel,
-        PreTrainedTokenizer,
-        Trainer,
-        TrainingArguments,
-    )
+    from transformers import PreTrainedModel, Trainer
     from transformers.utils.generic import ModelOutput
 
     HAS_TRANSFORMERS = True
@@ -28,19 +22,8 @@ except ImportError:
         pass
 
     PreTrainedModel = _DummyPreTrainedModel  # type: ignore[assignment]
-    PreTrainedTokenizer = Any  # type: ignore[assignment]
-    TrainingArguments = Any  # type: ignore[assignment]
     Trainer = Any  # type: ignore[assignment]
     ModelOutput = Any  # type: ignore[assignment]
-
-# Import datasets separately - this is optional for some functionality
-try:
-    from datasets import Dataset
-
-    HAS_DATASETS = True
-except ImportError:
-    HAS_DATASETS = False
-    Dataset = Any  # type: ignore[assignment]
 
 import importlib
 import json
@@ -57,14 +40,11 @@ from .optimizer import OptimizerFactory
 class HFModelBatch(ModelBatch):
     """Lightweight ModelBatch adapter for HuggingFace models."""
 
-    compute_loss_inside_forward: bool = False
-
     def __init__(
         self,
         models: list[PreTrainedModel],
         shared_input: bool = True,
     ) -> None:
-        # Add explicit check for transformers availability
         if not HAS_TRANSFORMERS:
             raise ImportError("transformers is required for HFModelBatch")
 
@@ -78,24 +58,50 @@ class HFModelBatch(ModelBatch):
 
     def forward(self, **kwargs) -> ModelOutput:  # type: ignore[name-defined]
         kwargs.pop("num_items_in_batch", None)
+
         outputs = []
+        losses = []
         for i in range(self.num_models):
             params = {name: param[i] for name, param in self.stacked_params.items()}
             buffers = {name: buffer[i] for name, buffer in self.stacked_buffers.items()}
-            outputs.append(
-                functional_call(self.func_model, {**params, **buffers}, (), kwargs)
+            output = functional_call(
+                self.func_model,
+                {**params, **buffers},
+                (),
+                kwargs,
             )
+            outputs.append(output)
+            if hasattr(output, "loss") and output.loss is not None:
+                losses.append(output.loss)
 
-        logits = torch.stack([out.logits for out in outputs])
-        if (
-            self.compute_loss_inside_forward
-            and hasattr(outputs[0], "loss")
-            and outputs[0].loss is not None
-        ):
-            return ModelOutput(
-                logits=logits, loss=torch.stack([out.loss for out in outputs]).mean()
+        result = {}
+        output_items = (
+            outputs[0].items()
+            if hasattr(outputs[0], "items")
+            else (("logits", outputs[0].logits),)
+            if hasattr(outputs[0], "logits")
+            else ()
+        )
+        for key, value in output_items:
+            if key == "loss" or not isinstance(value, torch.Tensor):
+                continue
+            values = [
+                out[key] if hasattr(out, "items") else getattr(out, key)
+                for out in outputs
+            ]
+            result[key] = torch.stack(values)
+
+        if losses:
+            if len(losses) != self.num_models:
+                raise TypeError(
+                    "HFModelBatch requires all models to return loss when any model does"
+                )
+            result["loss"] = torch.stack(losses).mean()
+        if not result:
+            raise TypeError(
+                "HFModelBatch requires HuggingFace models to return tensor outputs"
             )
-        return ModelOutput(logits=logits)
+        return ModelOutput(**result)
 
     def apply_to_submodels(
         self, attr: str, *args, stack: bool = True, **kwargs
@@ -171,8 +177,6 @@ class ModelBatchTrainer(HFTrainerMixin, Trainer):
         self,
         models: list[nn.Module],
         optimizer_configs: list[dict[str, Any]],
-        *,
-        _lr_scheduler_configs: list[dict[str, Any]] | None = None,
         **trainer_kwargs: Any,
     ) -> None:
         if not HAS_TRANSFORMERS:

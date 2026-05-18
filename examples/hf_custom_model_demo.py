@@ -14,7 +14,8 @@ from transformers import PretrainedConfig, PreTrainedModel, TrainingArguments
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from modelbatch.huggingface_integration import HFModelBatch, ModelBatchHFTrainer
+from modelbatch.huggingface_integration import ModelBatchTrainer
+from modelbatch.optimizer import create_adam_configs
 
 
 class TinyConfig(PretrainedConfig):
@@ -62,8 +63,6 @@ class TinyDataset(Dataset):
 def main() -> None:
     config = TinyConfig()
     models = [TinyModel(config) for _ in range(2)]
-    batch = HFModelBatch(models)
-    batch.compute_loss_inside_forward = True
 
     args = TrainingArguments(
         output_dir="/tmp/hf_custom",  # noqa: S108
@@ -71,8 +70,9 @@ def main() -> None:
         per_device_train_batch_size=8,
         logging_steps=1,
     )
-    trainer = ModelBatchHFTrainer(
-        model_batch=batch,
+    trainer = ModelBatchTrainer(
+        models=models,
+        optimizer_configs=create_adam_configs([1e-4, 1e-4]),
         args=args,
         train_dataset=TinyDataset(64, config),
     )

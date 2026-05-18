@@ -58,7 +58,6 @@ def main() -> None:
         args=args,
         train_dataset=RandomTextDataset(1024, 8, config.vocab_size),
     )
-    trainer.model_batch.compute_loss_inside_forward = True
     trainer.train()
     print("done")
 
