@@ -4,6 +4,7 @@ Core ModelBatch implementation using torch.vmap for vectorized training.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Callable
 
@@ -12,7 +13,7 @@ from torch import nn
 from torch.func import functional_call, stack_module_state
 
 
-def _check_models_compatible(model1: nn.Module, model2: nn.Module) -> tuple[bool, str]:
+def check_models_compatible(model1: nn.Module, model2: nn.Module) -> tuple[bool, str]:
     """
     Check if two models have compatible structure for ModelBatch.
 
@@ -34,7 +35,10 @@ def _check_models_compatible(model1: nn.Module, model2: nn.Module) -> tuple[bool
     # Check that parameter shapes match exactly
     for key in state1:
         if state1[key].shape != state2[key].shape:
-            return False, f"Parameter '{key}' has different shapes: {state1[key].shape} vs {state2[key].shape}"
+            return (
+                False,
+                f"Parameter '{key}' has different shapes: {state1[key].shape} vs {state2[key].shape}",
+            )
 
     return True, ""
 
@@ -56,26 +60,31 @@ class ModelBatch(nn.Module):
 
         if not models:
             raise ValueError("At least one model must be provided")
+        if len({id(model) for model in models}) != len(models):
+            raise ValueError("Each model in a ModelBatch must be a distinct instance")
 
         # Verify all models have the same structure
         self._verify_model_compatibility(models)
 
         self.num_models = len(models)
         self.shared_input = shared_input
+        self._state_keys = frozenset(models[0].state_dict())
 
-        # Store reference models for metadata/inspection
-        self.models = nn.ModuleList(models)
+        # Store models as non-registered live views for inspection/inference.
+        object.__setattr__(self, "models", tuple(models))
 
         # Stack parameters and buffers from all models
         stacked_params, stacked_buffers = stack_module_state(models)
 
         # Register stacked parameters as individual PyTorch parameters so they move with .to(device)
+        self._param_mapping = {}
         self.stacked_params = {}
         for name, param in stacked_params.items():
             # Replace dots with underscores for PyTorch parameter names
             safe_name = name.replace(".", "_")
             param_tensor = nn.Parameter(param)
             setattr(self, f"stacked_param_{safe_name}", param_tensor)
+            self._param_mapping[name] = f"stacked_param_{safe_name}"
             self.stacked_params[name] = param_tensor
 
         # Register stacked buffers as PyTorch buffers
@@ -83,11 +92,17 @@ class ModelBatch(nn.Module):
         self._buffer_mapping = {}
         for name, buffer in stacked_buffers.items():
             safe_name = name.replace(".", "_")
-            self.register_buffer(f"stacked_buffer_{safe_name}", buffer)
+            self.register_buffer(
+                f"stacked_buffer_{safe_name}",
+                buffer,
+                persistent=name in self._state_keys,
+            )
             self._buffer_mapping[name] = f"stacked_buffer_{safe_name}"
 
-        # Store the functional form of the first model for vmap
-        self.func_model = models[0]
+        # Store a clean functional template without registering it as a child module
+        object.__setattr__(self, "_template_model", deepcopy(models[0]))
+        object.__setattr__(self, "func_model", self._template_model)
+        self._refresh_model_views()
 
         # Track latest losses for monitoring
         self.latest_losses: torch.Tensor | None = None
@@ -106,8 +121,19 @@ class ModelBatch(nn.Module):
             Dict mapping buffer names to their current tensor values.
         """
         return {
-            name: getattr(self, attr_name) for name, attr_name in self._buffer_mapping.items()
+            name: getattr(self, attr_name)
+            for name, attr_name in self._buffer_mapping.items()
         }
+
+    def train(self, mode: bool = True) -> ModelBatch:
+        """Set training mode on the batch and its unregistered view modules."""
+        super().train(mode)
+        for model in self.models:
+            model.train(mode)
+        self._template_model.train(mode)
+        if self.func_model is not self._template_model:
+            self.func_model.train(mode)
+        return self
 
     def zero_grad(self, set_to_none: bool = True) -> None:
         """Clear gradients for all stacked parameters."""
@@ -116,6 +142,39 @@ class ModelBatch(nn.Module):
                 param.grad = None
             elif param.grad is not None:
                 param.grad.zero_()
+        for model in self.models:
+            model.zero_grad(set_to_none=set_to_none)
+
+    def _apply(self, fn) -> ModelBatch:
+        """Apply device/dtype changes to stacked state and refresh model views."""
+        result = super()._apply(fn)
+        self._template_model._apply(fn)
+        self.stacked_params = {
+            name: getattr(self, attr_name)
+            for name, attr_name in self._param_mapping.items()
+        }
+        self._refresh_model_views()
+        return result
+
+    def _refresh_model_views(self) -> None:
+        """Rebind each model's parameters and buffers to live stacked-state slices."""
+        for model_idx, model in enumerate(self.models):
+            for name, stacked_param in self.stacked_params.items():
+                parent_name, param_name = (
+                    name.rsplit(".", 1) if "." in name else ("", name)
+                )
+                parent = model.get_submodule(parent_name) if parent_name else model
+                parent._parameters[param_name] = nn.Parameter(
+                    stacked_param[model_idx],
+                    requires_grad=stacked_param.requires_grad,
+                )
+
+            for name, stacked_buffer in self.stacked_buffers.items():
+                parent_name, buffer_name = (
+                    name.rsplit(".", 1) if "." in name else ("", name)
+                )
+                parent = model.get_submodule(parent_name) if parent_name else model
+                parent._buffers[buffer_name] = stacked_buffer[model_idx]
 
     def _verify_model_compatibility(self, models: list[nn.Module]) -> None:
         """Verify all models have identical structure."""
@@ -125,7 +184,7 @@ class ModelBatch(nn.Module):
         reference = models[0]
 
         for i, model in enumerate(models[1:], 1):
-            is_compatible, error_msg = _check_models_compatible(reference, model)
+            is_compatible, error_msg = check_models_compatible(reference, model)
             if not is_compatible:
                 raise ValueError(f"Model {i} is incompatible with model 0: {error_msg}")
 
@@ -147,9 +206,11 @@ class ModelBatch(nn.Module):
 
             # Create a wrapper function that applies one model with given params/buffers
             def apply_model_shared(params, buffers):
-                # Combine parameters and buffers into single state dict
-                combined_state = {**params, **buffers}
-                return functional_call(self.func_model, combined_state, inputs)
+                return functional_call(
+                    self.func_model,
+                    {**params, **buffers},
+                    (inputs,),
+                )
 
             # Use vmap to vectorize over parameter/buffer dimensions
             vectorized_func = torch.vmap(
@@ -173,9 +234,11 @@ class ModelBatch(nn.Module):
 
             # Create a wrapper function for different inputs per model
             def apply_model_separate(params, buffers, input_):
-                # Combine parameters and buffers into single state dict
-                combined_state = {**params, **buffers}
-                return functional_call(self.func_model, combined_state, input_)
+                return functional_call(
+                    self.func_model,
+                    {**params, **buffers},
+                    (input_,),
+                )
 
             # Use vmap to vectorize over all dimensions
             vectorized_func = torch.vmap(
@@ -270,10 +333,27 @@ class ModelBatch(nn.Module):
                 state_dict[name] = stacked_param[i].clone()
             # Extract buffers
             for name, stacked_buffer in self.stacked_buffers.items():
-                state_dict[name] = stacked_buffer[i].clone()
+                if name in self._state_keys:
+                    state_dict[name] = stacked_buffer[i].clone()
             states.append(state_dict)
 
         return states
+
+    def materialize_model(self, index: int) -> nn.Module:
+        """
+        Create an independent module loaded with one live batched state.
+
+        Args:
+            index: Index of the model state to materialize
+
+        Returns:
+            A deepcopy of the template model loaded with the selected state.
+        """
+        if not 0 <= index < self.num_models:
+            raise IndexError(f"Model index out of range: {index}")
+        model = deepcopy(self._template_model)
+        model.load_state_dict(self.get_model_states()[index])
+        return model
 
     def load_model_states(self, states: list[dict[str, torch.Tensor]]) -> None:
         """Load individual model states back into the batch."""
@@ -315,7 +395,9 @@ class ModelBatch(nn.Module):
     def enable_compile(self, **kwargs) -> None:
         """Enable torch.compile for the vectorized function."""
         if hasattr(torch, "compile"):
-            self.func_model = torch.compile(self.func_model, **kwargs)
+            object.__setattr__(
+                self, "func_model", torch.compile(self.func_model, **kwargs)
+            )
             self._compiled = True
 
     def metrics(self) -> dict[str, float]:

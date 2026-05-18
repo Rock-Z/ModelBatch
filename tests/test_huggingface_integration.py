@@ -38,6 +38,24 @@ class TestHFModelBatch:
         outputs = self.batch(**inputs)
         assert outputs.logits.shape[0] == len(self.models)
 
+    def test_forward_uses_live_stacked_state(self):
+        self.batch.eval()
+        inputs = {
+            "input_ids": torch.randint(0, self.config.vocab_size, (4, 8)),
+            "attention_mask": torch.ones(4, 8),
+        }
+        original_bias = self.models[0].classifier.bias.clone()
+        before = self.batch(**inputs).logits.detach()
+        with torch.no_grad():
+            self.batch.stacked_params["classifier.bias"][0].add_(1.0)
+        after = self.batch(**inputs).logits.detach()
+        assert not torch.allclose(after[0], before[0])
+        assert not torch.allclose(self.models[0].classifier.bias, original_bias)
+        assert torch.allclose(
+            self.models[0].classifier.bias,
+            self.batch.stacked_params["classifier.bias"][0],
+        )
+
     def test_apply_to_submodels(self):
         hs = self.batch.apply_to_submodels("config.hidden_size")
         assert hs == [self.config.hidden_size] * len(self.models)
@@ -47,11 +65,17 @@ class TestHFModelBatch:
 
     def test_checkpoint_roundtrip(self, tmp_path):
         path = tmp_path / "hf_pack"
+        with torch.no_grad():
+            self.batch.stacked_params["classifier.bias"][0].add_(1.0)
         self.batch.save_pretrained(str(path))
         loaded = modelbatch.huggingface_integration.HFModelBatch.from_pretrained(
             str(path)
         )
         assert len(loaded.models) == len(self.models)
+        assert torch.allclose(
+            loaded.stacked_params["classifier.bias"][0],
+            self.batch.stacked_params["classifier.bias"][0],
+        )
 
     def test_gradient_checkpointing_toggle(self):
         self.batch.gradient_checkpointing_enable()
@@ -116,20 +140,20 @@ class TestSingleModelAccess:
         config = BertConfig(hidden_size=32, num_hidden_layers=1, num_attention_heads=2)
         models = [BertForSequenceClassification(config) for _ in range(2)]
         batch = modelbatch.huggingface_integration.HFModelBatch(models)
-        single = batch.models[0]
+        single_view = batch.models[0]
 
         path = tmp_path / "single_model"
-        single.save_pretrained(str(path))
-        loaded = type(single).from_pretrained(str(path))
+        single_view.save_pretrained(str(path))
+        loaded = type(single_view).from_pretrained(str(path))
 
         inputs = {
             "input_ids": torch.randint(0, config.vocab_size, (2, 8)),
             "attention_mask": torch.ones(2, 8),
             "labels": torch.tensor([1, 0]),
         }
-        single.eval()
+        single_view.eval()
         loaded.eval()
-        assert single(**inputs).logits.shape == loaded(**inputs).logits.shape
+        assert single_view(**inputs).logits.shape == loaded(**inputs).logits.shape
 
         class DummyDataset(torch.utils.data.Dataset):
             def __len__(self):
@@ -152,6 +176,7 @@ class TestSingleModelAccess:
             save_strategy="no",
         )
         os.environ["WANDB_DISABLED"] = "true"
+        single = batch.materialize_model(0)
         trainer = transformers.Trainer(
             model=single,
             args=args,
@@ -172,7 +197,9 @@ class TestSingleModelAccess:
             def __len__(self) -> int:  # pragma: no cover - simple dataset
                 return 4
 
-            def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:  # pragma: no cover
+            def __getitem__(
+                self, idx: int
+            ) -> dict[str, torch.Tensor]:  # pragma: no cover
                 return {
                     "input_ids": torch.randint(0, config.vocab_size, (8,)),
                     "attention_mask": torch.ones(8),

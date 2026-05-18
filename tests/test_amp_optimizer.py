@@ -270,12 +270,11 @@ def test_batched_vs_individual_consistency(num_models, input_size, scaling_facto
     assert torch.allclose(individual_loss_sum, loss_batched, rtol=1e-3, atol=1e-3)
 
     # Check parameter consistency
-    final_params_individual = [[p.clone() for p in model.parameters()] for model in individual_models]
-    final_params_batched = [[p.clone() for p in model.parameters()] for model in model_batch.models]
+    final_states_batched = model_batch.get_model_states()
 
-    for individual_params, batched_params in zip(final_params_individual, final_params_batched):
-        for ind_param, batch_param in zip(individual_params, batched_params):
-            assert torch.allclose(ind_param, batch_param, rtol=1e-2, atol=1e-2)
+    for individual_model, batched_state in zip(individual_models, final_states_batched):
+        for name, ind_param in individual_model.named_parameters():
+            assert torch.allclose(ind_param, batched_state[name], rtol=1e-2, atol=1e-2)
 
 
 @pytest.mark.skip("Currently skipping support for consistent single/batched AMP overflow handling")

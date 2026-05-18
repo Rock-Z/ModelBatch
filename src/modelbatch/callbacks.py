@@ -43,6 +43,7 @@ class Callback(ABC):
     ) -> None:
         """Called at the end of each epoch."""
 
+
 class CallbackPack:
     """
     Collection of callbacks for ModelBatch monitoring and management.
@@ -166,9 +167,12 @@ class NaNCallback(Callback):
 
     def _reset_model(self, model_batch: ModelBatch, model_idx: int) -> None:
         """Reset a model to its initial state using its own method if available."""
-        model = model_batch.models[model_idx]
+        model = model_batch.materialize_model(model_idx)
         if hasattr(model, "reset_parameters"):
             model.reset_parameters()
+            states = model_batch.get_model_states()
+            states[model_idx] = model.state_dict()
+            model_batch.load_model_states(states)
         else:
             warnings.warn(
                 f"Model at index {model_idx} does not implement reset_parameters(). "
@@ -209,7 +213,7 @@ class MetricsLogger(Callback):
 
     def on_train_step(
         self,
-        model_batch: ModelBatch, # noqa: ARG002
+        model_batch: ModelBatch,  # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:
@@ -221,7 +225,7 @@ class MetricsLogger(Callback):
 
     def on_validation_step(
         self,
-        model_batch: ModelBatch, # noqa: ARG002
+        model_batch: ModelBatch,  # noqa: ARG002
         step: int,
         metrics: dict[str, float],
     ) -> None:

@@ -13,7 +13,10 @@ class modelbatch.core.ModelBatch(models: list[nn.Module], shared_input: bool = T
 ```
 
 Stacks parameters from identical models and executes them in parallel with
-`torch.vmap`.
+`torch.vmap`. Stacked parameters and buffers are the live module state; the
+input models are rebound as non-registered live views over the stacked state.
+Indexing `mb.models[i]` returns a usable module view for inference and normal
+module inspection without adding duplicate `ModelBatch` parameters.
 
 #### Parameters
 
@@ -63,6 +66,9 @@ Return individual `state_dict` objects in `[num_models]` list form.
 
 #### `load_model_states(states: list[dict[str, torch.Tensor]]) -> None`
 Load per-model states produced by `get_model_states`.
+
+#### `materialize_model(index: int) -> nn.Module`
+Return an independent PyTorch module copy loaded with one live batched state.
 
 #### `save_all(path: str) -> None`
 Persist all model states under `path/model_{i}.pt`.
@@ -155,4 +161,3 @@ Return a list of schedulers, one per parameter group.
 factory = OptimizerFactory(torch.optim.SGD)
 opt = factory.create_optimizer(mb, create_sgd_configs([1e-2] * mb.num_models))
 ```
-

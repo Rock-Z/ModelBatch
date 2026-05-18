@@ -163,6 +163,9 @@ class TestModelBatchConsistency:
         """Test that ModelBatch gradients are consistent with individual model gradients."""
         models = create_identical_models(model_class, model_params, num_models)
         mb = ModelBatch(models)
+        mb.eval()
+        for model in models:
+            model.eval()
 
         # Create input and targets
         input_tensor = torch.randn(input_shape, requires_grad=True)
@@ -175,6 +178,12 @@ class TestModelBatchConsistency:
         outputs = mb(input_tensor)
         loss = mb.compute_loss(outputs, targets, F.cross_entropy)
         loss.backward()
+        batched_grads = {
+            name: param.grad.clone()
+            for name, param in mb.stacked_params.items()
+            if param.grad is not None
+        }
+        mb.zero_grad()
 
         # Compute individual gradients
         for _i, model in enumerate(models):
@@ -183,15 +192,14 @@ class TestModelBatchConsistency:
             loss = F.cross_entropy(out, targets)
             loss.backward()
 
-        # Compare gradients directly
+        # Compare gradients from the live stacked parameters directly.
         for i, model in enumerate(models):
-            for p_mb, p_ind in zip(mb.models[i].parameters(), model.parameters()):
-                g_mb = p_mb.grad
-                g_ind = p_ind.grad
-                if g_mb is not None and g_ind is not None:
-                    assert isinstance(g_mb, torch.Tensor)
-                    assert isinstance(g_ind, torch.Tensor)
-                    assert torch.allclose(g_mb, g_ind)
+            for name, p_ind in model.named_parameters():
+                assert name in batched_grads
+                assert p_ind.grad is not None
+                assert torch.allclose(
+                    batched_grads[name][i], p_ind.grad, atol=1e-5, rtol=1e-5
+                )
 
     def test_specific_model_combinations(self):
         """Test specific combinations that might have edge cases."""

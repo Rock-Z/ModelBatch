@@ -40,6 +40,23 @@ class TestModelBatch:
         assert mb.num_models == 4
         assert len(mb.models) == 4
 
+    def test_module_state_exposes_only_stacked_state(self):
+        """Test that normal module APIs expose only live stacked tensors."""
+        models = create_identical_models(SimpleMLP, {"input_size": 10}, 2)
+        mb = ModelBatch(models)
+
+        param_names = [name for name, _param in mb.named_parameters()]
+        state_names = list(mb.state_dict())
+
+        assert param_names
+        assert all(name.startswith("stacked_param_") for name in param_names)
+        assert not any(
+            name.startswith(("models.", "func_model.")) for name in param_names
+        )
+        assert not any(
+            name.startswith(("models.", "func_model.")) for name in state_names
+        )
+
     def test_incompatible_models(self):
         """Test that incompatible models raise error."""
         model1 = SimpleMLP(input_size=10)
@@ -47,6 +64,13 @@ class TestModelBatch:
 
         with pytest.raises(ValueError, match="different.*shape"):
             ModelBatch([model1, model2])
+
+    def test_duplicate_model_instances_raise_error(self):
+        """Test that models in a batch must be independent module instances."""
+        model = SimpleMLP(input_size=10)
+
+        with pytest.raises(ValueError, match="distinct instance"):
+            ModelBatch([model, model])
 
     def test_forward_shared_input(self):
         """Test forward pass with shared input."""
@@ -137,6 +161,75 @@ class TestModelBatch:
         for old_state, new_state in zip(states, new_states):
             for key in old_state:
                 assert torch.allclose(old_state[key], new_state[key])
+
+    def test_model_views_and_materialization_use_live_stacked_state(self):
+        """Test model views and explicit copies use live batched state."""
+        models = create_identical_models(SimpleMLP, {"input_size": 10}, 2)
+        mb = ModelBatch(models)
+
+        with torch.no_grad():
+            mb.stacked_params["network.0.weight"][1].add_(1.0)
+
+        materialized = mb.materialize_model(1)
+
+        live_state = mb.get_model_states()[1]
+        for key, tensor in live_state.items():
+            assert torch.allclose(mb.models[1].state_dict()[key], tensor)
+            assert torch.allclose(materialized.state_dict()[key], tensor)
+        assert torch.allclose(
+            models[1].state_dict()["network.0.weight"],
+            live_state["network.0.weight"],
+        )
+
+        with torch.no_grad():
+            mb.models[1].network[0].weight.add_(2.0)
+        assert torch.allclose(
+            mb.stacked_params["network.0.weight"][1],
+            mb.models[1].network[0].weight,
+        )
+
+    def test_model_views_refresh_after_dtype_change(self):
+        """Test that .to() refreshes model views to the current stacked storage."""
+        models = create_identical_models(SimpleMLP, {"input_size": 10}, 2)
+        mb = ModelBatch(models).to(dtype=torch.float64)
+
+        assert mb.models[1].network[0].weight.dtype == torch.float64
+        assert (
+            mb.models[1].network[0].weight.data_ptr()
+            == mb.stacked_params["network.0.weight"][1].data_ptr()
+        )
+
+    def test_single_model_view_forward_matches_batched_forward(self):
+        """Test that indexing mb.models returns a usable live model view."""
+        models = create_identical_models(SimpleMLP, {"input_size": 10}, 2)
+        mb = ModelBatch(models)
+        mb.eval()
+        input_tensor = torch.randn(4, 10)
+
+        batched_outputs = mb(input_tensor)
+        single_output = mb.models[1](input_tensor)
+
+        assert torch.allclose(single_output, batched_outputs[1])
+
+    def test_single_model_view_optimizer_updates_stacked_storage(self):
+        """Test that optimizing a model view updates the stacked storage."""
+        models = create_identical_models(SimpleMLP, {"input_size": 10}, 2)
+        mb = ModelBatch(models)
+        input_tensor = torch.randn(4, 10)
+        target = torch.randint(0, 3, (4,))
+        optimizer = torch.optim.SGD(mb.models[1].parameters(), lr=0.1)
+
+        before = mb.stacked_params["network.0.weight"][1].clone()
+        optimizer.zero_grad()
+        loss = F.cross_entropy(mb.models[1](input_tensor), target)
+        loss.backward()
+        optimizer.step()
+
+        assert not torch.allclose(before, mb.stacked_params["network.0.weight"][1])
+        assert torch.allclose(
+            mb.models[1].network[0].weight,
+            mb.stacked_params["network.0.weight"][1],
+        )
 
     def test_save_load_all(self, tmp_path):
         """Test saving and loading all models."""

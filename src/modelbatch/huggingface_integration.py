@@ -22,9 +22,11 @@ try:
     HAS_TRANSFORMERS = True
 except ImportError:
     HAS_TRANSFORMERS = False
+
     # Don't use Any for isinstance checks - create a dummy class instead
     class _DummyPreTrainedModel:
         pass
+
     PreTrainedModel = _DummyPreTrainedModel  # type: ignore[assignment]
     PreTrainedTokenizer = Any  # type: ignore[assignment]
     TrainingArguments = Any  # type: ignore[assignment]
@@ -34,6 +36,7 @@ except ImportError:
 # Import datasets separately - this is optional for some functionality
 try:
     from datasets import Dataset
+
     HAS_DATASETS = True
 except ImportError:
     HAS_DATASETS = False
@@ -45,6 +48,7 @@ from pathlib import Path
 
 import torch
 from torch import nn
+from torch.func import functional_call
 
 from .core import ModelBatch
 from .optimizer import OptimizerFactory
@@ -74,20 +78,23 @@ class HFModelBatch(ModelBatch):
 
     def forward(self, **kwargs) -> ModelOutput:  # type: ignore[name-defined]
         kwargs.pop("num_items_in_batch", None)
-        outputs = [model(**kwargs) for model in self.models]
+        outputs = []
+        for i in range(self.num_models):
+            params = {name: param[i] for name, param in self.stacked_params.items()}
+            buffers = {name: buffer[i] for name, buffer in self.stacked_buffers.items()}
+            outputs.append(
+                functional_call(self.func_model, {**params, **buffers}, (), kwargs)
+            )
+
         logits = torch.stack([out.logits for out in outputs])
-        losses = None
         if (
             self.compute_loss_inside_forward
             and hasattr(outputs[0], "loss")
             and outputs[0].loss is not None
         ):
-            # Check that all outputs have non-None losses before stacking
-            all_losses = [out.loss for out in outputs]
-            if all(loss is not None for loss in all_losses):
-                losses = torch.stack(all_losses)
-        if losses is not None:
-            return ModelOutput(logits=logits, loss=losses.mean())
+            return ModelOutput(
+                logits=logits, loss=torch.stack([out.loss for out in outputs]).mean()
+            )
         return ModelOutput(logits=logits)
 
     def apply_to_submodels(
@@ -123,8 +130,8 @@ class HFModelBatch(ModelBatch):
             "model_cls": f"{self.models[0].__class__.__module__}."
             f"{self.models[0].__class__.__name__}",
         }
-        for i, model in enumerate(self.models):
-            model.save_pretrained(p / f"model_{i}")
+        for i in range(self.num_models):
+            self.materialize_model(i).save_pretrained(p / f"model_{i}")
         with (p / "hf_batch.json").open("w", encoding="utf-8") as fh:
             json.dump(meta, fh)
 
@@ -178,5 +185,7 @@ class ModelBatchTrainer(HFTrainerMixin, Trainer):
     # Avoid saving checkpoints since ModelBatch shares tensor storage across
     # modules, which safetensors refuses to serialize. This keeps demos/tests
     # simple and non-interactive.
-    def save_model(self, output_dir: str | None = None, _internal_call: bool = False) -> None:  # type: ignore[override]  # noqa: ARG002, FBT001, FBT002
+    def save_model(
+        self, output_dir: str | None = None, _internal_call: bool = False
+    ) -> None:  # type: ignore[override]
         return

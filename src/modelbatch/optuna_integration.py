@@ -36,7 +36,7 @@ except ImportError:
 
 from torch import nn
 
-from .core import ModelBatch, _check_models_compatible
+from .core import ModelBatch, check_models_compatible
 
 # Initialize logger for this module
 logger = get_optuna_logger()
@@ -293,7 +293,7 @@ class BatchGroup:
             )
 
         # Check compatibility with existing models in the group
-        if self.models and not _check_models_compatible(self.models[0], model)[0]:
+        if self.models and not check_models_compatible(self.models[0], model)[0]:
             raise ValueError(
                 f"Model for trial {trial.number} is not compatible with existing models "
                 f"in batch group {self.group_id}. Model structures must match exactly for batching. "
@@ -439,7 +439,7 @@ class TrialBatcher:
                         continue
 
                     # Check if this model is compatible with the group
-                    is_compatible, reason = _check_models_compatible(model, group.models[0])
+                    is_compatible, reason = check_models_compatible(model, group.models[0])
                     logger.debug("Compatibility check result",
                                extra={"is_compatible": is_compatible, "reason": reason})
 
