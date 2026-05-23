@@ -145,19 +145,15 @@ Build optimizers and schedulers with per-model parameter groups.
 #### `create_optimizer(model_batch: ModelBatch, configs: list[dict[str, Any]]) -> Optimizer`
 
 Return optimizer with one parameter group per model. `configs` should have length
-`num_models`.
+`num_models` and contain the keyword arguments for each PyTorch optimizer
+parameter group.
+
+```python
+factory = OptimizerFactory(torch.optim.SGD)
+configs = [{"lr": 1e-2, "momentum": 0.9} for _ in range(mb.num_models)]
+opt = factory.create_optimizer(mb, configs)
+```
 
 #### `create_lr_scheduler(optimizer: Optimizer, scheduler_cls: type, configs: list[dict[str, Any]]) -> list`
 
 Return a list of schedulers, one per parameter group.
-
-### Helper Functions
-
-- `create_sgd_configs(learning_rates: list[float], momentum: float = 0.9, weight_decay: float = 1e-4) -> list[dict[str, Any]]`
-- `create_adam_configs(learning_rates: list[float], betas: tuple = (0.9, 0.999), eps: float = 1e-8, weight_decay: float = 0.0) -> list[dict[str, Any]]`
-- `create_lr_sweep_configs(min_lr: float, max_lr: float, num_models: int, scale: str = "log") -> list[dict[str, float]]`
-
-```python
-factory = OptimizerFactory(torch.optim.SGD)
-opt = factory.create_optimizer(mb, create_sgd_configs([1e-2] * mb.num_models))
-```

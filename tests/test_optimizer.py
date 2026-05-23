@@ -4,7 +4,7 @@ Tests for OptimizerFactory - catching learning rate and gradient bugs.
 
 from pathlib import Path
 import sys
-from typing import cast
+from typing import Any, cast
 
 import pytest
 import torch
@@ -15,10 +15,22 @@ import torch.nn.functional as F
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from modelbatch import ModelBatch, OptimizerFactory
-from modelbatch.optimizer import create_adam_configs
 from modelbatch.utils import create_identical_models
 
 from .test_models import SimpleMLP
+
+
+def create_adam_configs(
+    learning_rates: list[float],
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Create local Adam configs for optimizer tests."""
+    return [
+        {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
+        for lr in learning_rates
+    ]
 
 
 class TestOptimizerFactory:

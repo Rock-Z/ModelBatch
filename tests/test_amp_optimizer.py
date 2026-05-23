@@ -1,5 +1,7 @@
 """Test AMP (Automatic Mixed Precision) integration with ModelBatch optimizers."""
 
+from typing import Any
+
 import numpy as np
 import pytest
 import torch
@@ -8,13 +10,23 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from modelbatch import ModelBatch
-from modelbatch.optimizer import (
-    OptimizerFactory,
-    create_adam_configs,
-)
+from modelbatch.optimizer import OptimizerFactory
 from modelbatch.utils import create_identical_models, random_init_fn
 
 from .test_models import ImageMLP, create_dummy_data
+
+
+def create_adam_configs(
+    learning_rates: list[float],
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Create local Adam configs for AMP optimizer tests."""
+    return [
+        {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
+        for lr in learning_rates
+    ]
 
 
 def is_amp_supported():

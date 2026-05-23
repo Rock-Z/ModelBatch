@@ -7,7 +7,7 @@ import random
 import sys
 import time
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import torch
@@ -22,8 +22,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from utils import set_random_seeds
 from modelbatch import ModelBatch, OptimizerFactory, DataRouter
 from modelbatch.data import StratifiedDataRouter
-from modelbatch.optimizer import create_adam_configs
 from modelbatch.utils import count_parameters
+
+
+def create_adam_configs(
+    learning_rates: list[float],
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Create Adam configs for this benchmark's per-probe learning rates."""
+    return [
+        {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
+        for lr in learning_rates
+    ]
 
 
 class BERTTokenLevelProbe(nn.Module):

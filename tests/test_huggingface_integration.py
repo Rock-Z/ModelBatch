@@ -2,14 +2,13 @@
 import os
 from pathlib import Path
 import sys
+from typing import Any
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import pytest
 import torch
-
-from modelbatch.optimizer import create_adam_configs
 
 transformers = pytest.importorskip("transformers")
 from transformers import (
@@ -21,6 +20,19 @@ from transformers import (
 )
 
 import modelbatch
+
+
+def create_adam_configs(
+    learning_rates: list[float],
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Create local Adam configs for Hugging Face integration tests."""
+    return [
+        {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
+        for lr in learning_rates
+    ]
 
 
 class TestHFModelBatch:

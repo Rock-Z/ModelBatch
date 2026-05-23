@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 import torch
@@ -16,8 +16,20 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from modelbatch import ModelBatch, OptimizerFactory
-from modelbatch.optimizer import create_adam_configs
 from modelbatch.utils import count_parameters
+
+
+def create_adam_configs(
+    learning_rates: Sequence[float],
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Create Adam configs for benchmark learning-rate sweeps."""
+    return [
+        {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
+        for lr in learning_rates
+    ]
 
 
 def set_random_seeds(seed: int = 6235) -> None:
@@ -138,5 +150,4 @@ def train_modelbatch(
     total_time = time.time() - start_time
     print(f"ModelBatch time: {total_time:.2f}s")
     return total_time, model_batch
-
 

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 import torch
 from torch.optim import Optimizer
 
@@ -149,80 +148,4 @@ class OptimizerFactory:
             schedulers.append(scheduler)
 
         return schedulers
-
-
-
-def create_sgd_configs(
-    learning_rates: list[float],
-    momentum: float = 0.9,
-    weight_decay: float = 1e-4,
-) -> list[dict[str, Any]]:
-    """
-    Utility to create SGD configs with different learning rates.
-
-    Args:
-        learning_rates: List of learning rates for each model
-        momentum: Momentum parameter (shared)
-        weight_decay: Weight decay parameter (shared)
-
-    Returns:
-        List of optimizer configs
-    """
-    return [
-        {"lr": lr, "momentum": momentum, "weight_decay": weight_decay}
-        for lr in learning_rates
-    ]
-
-
-def create_adam_configs(
-    learning_rates: list[float],
-    betas: tuple = (0.9, 0.999),
-    eps: float = 1e-8,
-    weight_decay: float = 0.0,
-) -> list[dict[str, Any]]:
-    """
-    Utility to create Adam configs with different learning rates.
-
-    Args:
-        learning_rates: List of learning rates for each model
-        betas: Adam beta parameters (shared)
-        eps: Adam epsilon parameter (shared)
-        weight_decay: Weight decay parameter (shared)
-
-    Returns:
-        List of optimizer configs
-    """
-    return [
-        {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
-        for lr in learning_rates
-    ]
-
-
-def create_lr_sweep_configs(
-    min_lr: float,
-    max_lr: float,
-    num_models: int,
-    scale: str = "log",
-) -> list[dict[str, float]]:
-    """
-    Create learning rate sweep configurations.
-
-    Args:
-        min_lr: Minimum learning rate
-        max_lr: Maximum learning rate
-        num_models: Number of models/learning rates to generate
-        scale: "log" or "linear" spacing
-
-    Returns:
-        List of configs with different learning rates
-    """
-    if scale == "log":
-        lrs = np.logspace(np.log10(min_lr), np.log10(max_lr), num_models)
-    elif scale == "linear":
-        lrs = np.linspace(min_lr, max_lr, num_models)
-    else:
-        raise ValueError(f"Unknown scale: {scale}")
-
-    return [{"lr": float(lr)} for lr in lrs]
-
 

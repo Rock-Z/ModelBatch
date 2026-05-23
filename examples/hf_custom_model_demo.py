@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from typing import Any
 
 import torch
 from torch import nn
@@ -15,7 +16,19 @@ from transformers import PretrainedConfig, PreTrainedModel, TrainingArguments
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from modelbatch.huggingface_integration import ModelBatchTrainer
-from modelbatch.optimizer import create_adam_configs
+
+
+def create_adam_configs(
+    learning_rates: list[float],
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.0,
+) -> list[dict[str, Any]]:
+    """Create Adam configs for this demo's per-model learning rates."""
+    return [
+        {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
+        for lr in learning_rates
+    ]
 
 
 class TinyConfig(PretrainedConfig):
