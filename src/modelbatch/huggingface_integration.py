@@ -118,6 +118,90 @@ class HFModelBatch(ModelBatch):
             return torch.stack(results)
         return results
 
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+        max_new_tokens: int | None = None,
+        max_length: int | None = None,
+        pad_token_id: int | None = None,
+        eos_token_id: int | None = None,
+        do_sample: bool = False,
+        **kwargs: Any,
+    ) -> torch.Tensor:
+        """Greedy decoder-only generation through the batched forward path."""
+        if do_sample:
+            raise ValueError(
+                "HFModelBatch.generate currently supports greedy decoding only"
+            )
+        if kwargs:
+            raise ValueError(
+                "HFModelBatch.generate only supports input_ids, attention_mask, "
+                "max_new_tokens, max_length, pad_token_id, and eos_token_id"
+            )
+        if max_new_tokens is None:
+            if max_length is None:
+                raise ValueError("Either max_new_tokens or max_length must be set")
+            max_new_tokens = max_length - input_ids.shape[1]
+        if max_new_tokens < 0:
+            raise ValueError("Generation length is shorter than the input prompt")
+
+        device = next(self.parameters()).device
+        generated = input_ids.to(device).unsqueeze(0).expand(self.num_models, -1, -1)
+        if attention_mask is None:
+            attention_mask = torch.ones_like(generated)
+        else:
+            attention_mask = (
+                attention_mask.to(device).unsqueeze(0).expand(self.num_models, -1, -1)
+            )
+
+        finished = torch.zeros(
+            self.num_models,
+            input_ids.shape[0],
+            dtype=torch.bool,
+            device=device,
+        )
+        for _ in range(max_new_tokens):
+            next_tokens = []
+            for i in range(self.num_models):
+                params = {name: param[i] for name, param in self.stacked_params.items()}
+                buffers = {
+                    name: buffer[i] for name, buffer in self.stacked_buffers.items()
+                }
+                output = functional_call(
+                    self.func_model,
+                    {**params, **buffers},
+                    (),
+                    {
+                        "input_ids": generated[i],
+                        "attention_mask": attention_mask[i],
+                    },
+                )
+                next_tokens.append(output.logits[:, -1].argmax(dim=-1))
+            next_tokens = torch.stack(next_tokens)
+            if eos_token_id is not None:
+                was_finished = finished
+                finished = finished | (next_tokens == eos_token_id)
+                if pad_token_id is not None:
+                    next_tokens = torch.where(
+                        was_finished,
+                        torch.full_like(next_tokens, pad_token_id),
+                        next_tokens,
+                    )
+
+            generated = torch.cat(
+                [
+                    generated,
+                    next_tokens.unsqueeze(-1),
+                ],
+                dim=-1,
+            )
+            attention_mask = torch.ones_like(generated)
+            if eos_token_id is not None and finished.all():
+                break
+
+        return generated
+
     def gradient_checkpointing_enable(self) -> None:
         for model in self.models:
             if hasattr(model, "gradient_checkpointing_enable"):
