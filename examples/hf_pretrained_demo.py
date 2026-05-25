@@ -248,16 +248,19 @@ def batched_exact_match_accuracy(
         input_ids = torch.tensor([prompt], device=device)
         attention_mask = torch.ones_like(input_ids)
         with torch.no_grad():
-            generated = model_batch.generate(
+            generated_per_model = model_batch.apply_to_submodels(
+                "generate",
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=dataset.max_length - len(prompt),
                 pad_token_id=dataset.tokenizer.pad_id,
                 eos_token_id=dataset.tokenizer.eos_id,
+                do_sample=False,
+                stack=False,
             )
-        for model_idx in range(model_batch.num_models):
+        for model_idx, generated in enumerate(generated_per_model):
             prediction = dataset.tokenizer.decode_action_ids(
-                generated[model_idx, 0, len(prompt) :].cpu()
+                generated[0, len(prompt) :].cpu()
             )
             correct[model_idx] += prediction == expected
     return {
@@ -285,12 +288,15 @@ def generation_consistency(
         input_ids = torch.tensor([prompt], device=device)
         attention_mask = torch.ones_like(input_ids)
         with torch.no_grad():
-            batched = model_batch.generate(
+            batched_per_model = model_batch.apply_to_submodels(
+                "generate",
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 max_new_tokens=dataset.max_length - len(prompt),
                 pad_token_id=dataset.tokenizer.pad_id,
                 eos_token_id=dataset.tokenizer.eos_id,
+                do_sample=False,
+                stack=False,
             )
             for model_idx, model in enumerate(materialized):
                 single = model.generate(
@@ -302,7 +308,7 @@ def generation_consistency(
                     do_sample=False,
                 )
                 batched_text = dataset.tokenizer.decode_action_ids(
-                    batched[model_idx, 0, len(prompt) :].cpu()
+                    batched_per_model[model_idx][0, len(prompt) :].cpu()
                 )
                 single_text = dataset.tokenizer.decode_action_ids(
                     single[0, len(prompt) :].cpu()
