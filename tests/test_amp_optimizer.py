@@ -47,7 +47,7 @@ def is_amp_supported():
 # Skip all AMP tests if not supported
 pytestmark = pytest.mark.skipif(
     not is_amp_supported(),
-    reason="AMP not supported (CUDA unavailable or FP16 not supported)"
+    reason="AMP not supported (CUDA unavailable or FP16 not supported)",
 )
 
 
@@ -87,16 +87,48 @@ def setup_amp_test():
     ("model_config", "num_steps", "optimizer_class", "optimizer_kwargs"),
     [
         # Basic AMP functionality with different model configs
-        ({"input_size": 784, "hidden_size": 64, "num_classes": 10}, 1, torch.optim.Adam, {"lr": 0.001}),
-        ({"input_size": 256, "hidden_size": 128, "num_classes": 5}, 1, torch.optim.Adam, {"lr": 0.001}),
-        ({"input_size": 512, "hidden_size": 32, "num_classes": 15}, 3, torch.optim.Adam, {"lr": 0.001}),
+        (
+            {"input_size": 784, "hidden_size": 64, "num_classes": 10},
+            1,
+            torch.optim.Adam,
+            {"lr": 0.001},
+        ),
+        (
+            {"input_size": 256, "hidden_size": 128, "num_classes": 5},
+            1,
+            torch.optim.Adam,
+            {"lr": 0.001},
+        ),
+        (
+            {"input_size": 512, "hidden_size": 32, "num_classes": 15},
+            3,
+            torch.optim.Adam,
+            {"lr": 0.001},
+        ),
         # Test different optimizers
-        ({"input_size": 784, "hidden_size": 64, "num_classes": 10}, 1, torch.optim.SGD, {"lr": 0.01, "momentum": 0.9}),
-        ({"input_size": 784, "hidden_size": 64, "num_classes": 10}, 1, torch.optim.AdamW, {"lr": 0.001, "weight_decay": 1e-4}),
-        ({"input_size": 784, "hidden_size": 64, "num_classes": 10}, 1, torch.optim.RMSprop, {"lr": 0.001}),
-    ]
+        (
+            {"input_size": 784, "hidden_size": 64, "num_classes": 10},
+            1,
+            torch.optim.SGD,
+            {"lr": 0.01, "momentum": 0.9},
+        ),
+        (
+            {"input_size": 784, "hidden_size": 64, "num_classes": 10},
+            1,
+            torch.optim.AdamW,
+            {"lr": 0.001, "weight_decay": 1e-4},
+        ),
+        (
+            {"input_size": 784, "hidden_size": 64, "num_classes": 10},
+            1,
+            torch.optim.RMSprop,
+            {"lr": 0.001},
+        ),
+    ],
 )
-def test_amp_training_comprehensive(model_config, num_steps, optimizer_class, optimizer_kwargs):
+def test_amp_training_comprehensive(
+    model_config, num_steps, optimizer_class, optimizer_kwargs
+):
     """Test AMP training with various model configs, optimizers, and step counts."""
     device = torch.device("cuda")
     batch_size = 32
@@ -106,7 +138,7 @@ def test_amp_training_comprehensive(model_config, num_steps, optimizer_class, op
     dataset = create_dummy_data(
         num_samples=128,
         input_size=model_config["input_size"],
-        num_classes=model_config["num_classes"]
+        num_classes=model_config["num_classes"],
     )
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
@@ -133,9 +165,7 @@ def test_amp_training_comprehensive(model_config, num_steps, optimizer_class, op
         optimizer.zero_grad()
         with torch.amp.autocast("cuda"):
             outputs = model_batch(batch_data)
-            loss = model_batch.compute_loss(
-                outputs, batch_target, F.cross_entropy
-            )
+            loss = model_batch.compute_loss(outputs, batch_target, F.cross_entropy)
         scaler.scale(loss).backward()
         scaler.step(optimizer)
         scaler.update()
@@ -161,8 +191,12 @@ def test_amp_fp32_consistency():
     num_models = 2
 
     # Create identical model batches
-    models_amp = create_identical_models(ImageMLP, model_config, num_models, random_init_fn)
-    models_fp32 = create_identical_models(ImageMLP, model_config, num_models, random_init_fn)
+    models_amp = create_identical_models(
+        ImageMLP, model_config, num_models, random_init_fn
+    )
+    models_fp32 = create_identical_models(
+        ImageMLP, model_config, num_models, random_init_fn
+    )
 
     # Copy weights to ensure identical start
     for m_amp, m_fp32 in zip(models_amp, models_fp32):
@@ -208,11 +242,14 @@ def test_amp_fp32_consistency():
     assert abs(loss_amp.item() - loss_fp32.item()) < 1.0
 
 
-@pytest.mark.parametrize(("num_models", "input_size", "scaling_factors"), [
-    (2, 784, [1.0, 2.0]),
-    (3, 512, [0.5, 1.0, 2.0]),
-    (4, 1024, [0.1, 1.0, 10.0, 5.0]),
-])
+@pytest.mark.parametrize(
+    ("num_models", "input_size", "scaling_factors"),
+    [
+        (2, 784, [1.0, 2.0]),
+        (3, 512, [0.5, 1.0, 2.0]),
+        (4, 1024, [0.1, 1.0, 10.0, 5.0]),
+    ],
+)
 def test_batched_vs_individual_consistency(num_models, input_size, scaling_factors):
     """Test batched AMP matches individual training for same and different scaling."""
     device = torch.device("cuda")
@@ -220,13 +257,19 @@ def test_batched_vs_individual_consistency(num_models, input_size, scaling_facto
     num_classes = 10
 
     # Create dummy data
-    dataset = create_dummy_data(num_samples=128, input_size=input_size, num_classes=num_classes)
+    dataset = create_dummy_data(
+        num_samples=128, input_size=input_size, num_classes=num_classes
+    )
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     data, target = next(iter(loader))
     data, target = data.to(device), target.to(device)
 
     # Create models
-    model_config = {"input_size": input_size, "hidden_size": 64, "num_classes": num_classes}
+    model_config = {
+        "input_size": input_size,
+        "hidden_size": 64,
+        "num_classes": num_classes,
+    }
     models = create_identical_models(ImageMLP, model_config, num_models, random_init_fn)
 
     # Apply scaling factors
@@ -240,8 +283,7 @@ def test_batched_vs_individual_consistency(num_models, input_size, scaling_facto
         individual_model.load_state_dict(base_model.state_dict())
 
     individual_optimizers = [
-        torch.optim.Adam(model.parameters(), lr=0.001)
-        for model in individual_models
+        torch.optim.Adam(model.parameters(), lr=0.001) for model in individual_models
     ]
 
     # Batched training setup
@@ -289,7 +331,9 @@ def test_batched_vs_individual_consistency(num_models, input_size, scaling_facto
             assert torch.allclose(ind_param, batched_state[name], rtol=1e-2, atol=1e-2)
 
 
-@pytest.mark.skip("Currently skipping support for consistent single/batched AMP overflow handling")
+@pytest.mark.skip(
+    "Currently skipping support for consistent single/batched AMP overflow handling"
+)
 def test_amp_overflow_handling(input_size):  # noqa: PLR0915
     """Test AMP handles gradient overflow correctly with both individual and batched training."""
     device = torch.device("cuda")
@@ -298,16 +342,24 @@ def test_amp_overflow_handling(input_size):  # noqa: PLR0915
     num_classes = 10
 
     # Create dummy data
-    dataset = create_dummy_data(num_samples=128, input_size=input_size, num_classes=num_classes)
+    dataset = create_dummy_data(
+        num_samples=128, input_size=input_size, num_classes=num_classes
+    )
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     data, target = next(iter(loader))
     data, target = data.to(device), target.to(device)
 
     # Create model configs
-    model_config = {"input_size": input_size, "hidden_size": 64, "num_classes": num_classes}
+    model_config = {
+        "input_size": input_size,
+        "hidden_size": 64,
+        "num_classes": num_classes,
+    }
 
     # Create base models
-    base_models = create_identical_models(ImageMLP, model_config, num_models, random_init_fn)
+    base_models = create_identical_models(
+        ImageMLP, model_config, num_models, random_init_fn
+    )
 
     # Apply scaling factors to create overflow scenarios
     scaling_factors = [1.0, 50.0, 200.0, 1000.0]
@@ -321,13 +373,14 @@ def test_amp_overflow_handling(input_size):  # noqa: PLR0915
         individual_model.load_state_dict(base_model.state_dict())
 
     individual_optimizers = [
-        torch.optim.Adam(model.parameters(), lr=0.001)
-        for model in individual_models
+        torch.optim.Adam(model.parameters(), lr=0.001) for model in individual_models
     ]
     individual_scalers = [GradScaler(device="cuda") for _ in range(num_models)]
 
     individual_losses = []
-    for model, optimizer, scaler in zip(individual_models, individual_optimizers, individual_scalers):
+    for model, optimizer, scaler in zip(
+        individual_models, individual_optimizers, individual_scalers
+    ):
         optimizer.zero_grad()
         with torch.amp.autocast("cuda"):
             outputs = model(data)
@@ -369,9 +422,13 @@ def test_amp_overflow_handling(input_size):  # noqa: PLR0915
         batched_individual_losses.append(loss.item())
 
     # Check that each model's NaN behavior matches between individual and batched training
-    for i, (individual_loss, batched_individual_loss) in enumerate(zip(individual_losses, batched_individual_losses)):
+    for i, (individual_loss, batched_individual_loss) in enumerate(
+        zip(individual_losses, batched_individual_losses)
+    ):
         individual_has_nan = np.isnan(individual_loss) or np.isinf(individual_loss)
-        batched_has_nan = np.isnan(batched_individual_loss) or np.isinf(batched_individual_loss)
+        batched_has_nan = np.isnan(batched_individual_loss) or np.isinf(
+            batched_individual_loss
+        )
 
         assert individual_has_nan == batched_has_nan, (
             f"Model {i}: Individual training has NaN={individual_has_nan}, "
@@ -382,12 +439,18 @@ def test_amp_overflow_handling(input_size):  # noqa: PLR0915
     assert batched_scaler.get_scale() > 0
 
     # Check that models without NaN have similar losses
-    for i, (individual_loss, batched_individual_loss) in enumerate(zip(individual_losses, batched_individual_losses)):
+    for i, (individual_loss, batched_individual_loss) in enumerate(
+        zip(individual_losses, batched_individual_losses)
+    ):
         individual_has_nan = np.isnan(individual_loss) or np.isinf(individual_loss)
-        batched_has_nan = np.isnan(batched_individual_loss) or np.isinf(batched_individual_loss)
+        batched_has_nan = np.isnan(batched_individual_loss) or np.isinf(
+            batched_individual_loss
+        )
 
         if not individual_has_nan and not batched_has_nan:
-            relative_error = abs(individual_loss - batched_individual_loss) / max(abs(individual_loss), 1e-6)
+            relative_error = abs(individual_loss - batched_individual_loss) / max(
+                abs(individual_loss), 1e-6
+            )
             assert relative_error < 0.2, (
                 f"Model {i}: Loss mismatch between individual ({individual_loss}) "
                 f"and batched ({batched_individual_loss}) training"

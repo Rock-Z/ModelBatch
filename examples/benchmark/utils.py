@@ -64,7 +64,9 @@ def evaluate_accuracy(
                 labels = batch_labels.to(device)
                 logits = models_or_batch(inputs)  # [num_models, batch, num_classes]
                 preds = logits.argmax(dim=2)
-                labels_expanded = labels.unsqueeze(0).expand(models_or_batch.num_models, -1)
+                labels_expanded = labels.unsqueeze(0).expand(
+                    models_or_batch.num_models, -1
+                )
                 correct += (preds == labels_expanded).sum(dim=1).float()
                 total += labels.size(0)
         return (100 * correct / max(total, 1)).detach().cpu().tolist()
@@ -129,7 +131,9 @@ def train_modelbatch(
 
     model_batch = ModelBatch(models, shared_input=True).to(device)
     param_info = count_parameters(model_batch)
-    print(f"Total parameters: {param_info['total_params']:,} ({model_batch.num_models} models)")
+    print(
+        f"Total parameters: {param_info['total_params']:,} ({model_batch.num_models} models)"
+    )
 
     optimizer_factory = OptimizerFactory(torch.optim.Adam)
     optimizer_configs = create_adam_configs(learning_rates)
@@ -150,4 +154,3 @@ def train_modelbatch(
     total_time = time.time() - start_time
     print(f"ModelBatch time: {total_time:.2f}s")
     return total_time, model_batch
-

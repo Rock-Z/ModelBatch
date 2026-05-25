@@ -110,10 +110,13 @@ MODEL_CASES = [
     (SimpleCNN, {"input_channels": 1, "num_classes": 4}, 2),
 ]
 
+
 @pytest.mark.parametrize("backend", ["inductor", "aot_eager"])
 @pytest.mark.parametrize("model_class,model_params,num_models", MODEL_CASES)
 @pytest.mark.parametrize("shared_input", [True, False])
-def test_compile_forward_matches_eager(model_class, model_params, num_models, shared_input, backend):
+def test_compile_forward_matches_eager(
+    model_class, model_params, num_models, shared_input, backend
+):
     mb_eager, mb_comp = _make_eager_and_compiled(
         model_class, model_params, num_models, shared_input, backend=backend
     )
@@ -130,7 +133,9 @@ def test_compile_forward_matches_eager(model_class, model_params, num_models, sh
 @pytest.mark.parametrize("backend", ["inductor", "aot_eager"])
 @pytest.mark.parametrize("model_class,model_params,num_models", MODEL_CASES)
 @pytest.mark.parametrize("shared_input", [True, False])
-def test_compile_loss_matches_eager(model_class, model_params, num_models, shared_input, backend):
+def test_compile_loss_matches_eager(
+    model_class, model_params, num_models, shared_input, backend
+):
     mb_eager, mb_comp = _make_eager_and_compiled(
         model_class, model_params, num_models, shared_input, backend=backend
     )
@@ -147,7 +152,9 @@ def test_compile_loss_matches_eager(model_class, model_params, num_models, share
 @pytest.mark.parametrize("backend", ["inductor", "aot_eager"])
 @pytest.mark.parametrize("model_class,model_params,num_models", MODEL_CASES)
 @pytest.mark.parametrize("shared_input", [True, False])
-def test_compile_gradients_match_eager(model_class, model_params, num_models, shared_input, backend):
+def test_compile_gradients_match_eager(
+    model_class, model_params, num_models, shared_input, backend
+):
     mb_eager, mb_comp = _make_eager_and_compiled(
         model_class, model_params, num_models, shared_input, backend=backend
     )
@@ -183,5 +190,3 @@ def test_compile_gradients_match_eager(model_class, model_params, num_models, sh
 
     assert saw_any_grad, "No gradients found on parameters"
     assert grads_match_all
-
-

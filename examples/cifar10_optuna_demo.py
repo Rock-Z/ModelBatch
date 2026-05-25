@@ -5,6 +5,7 @@ This demo shows how to use ModelBatch with Optuna for comprehensive
 hyperparameter search on CIFAR-10, including model architecture,
 learning rates, and training hyperparameters.
 """
+
 from __future__ import annotations
 
 import os
@@ -58,13 +59,16 @@ class CIFAR10CNN(nn.Module):
         for _ in range(num_conv_layers):
             conv_output_size = conv_output_size // 2
 
-
         # Build convolutional layers
         layers = []
         in_channels = 3
 
         # First conv layer
-        layers.append(nn.Conv2d(in_channels, conv1_channels, kernel_size, padding=kernel_size//2))
+        layers.append(
+            nn.Conv2d(
+                in_channels, conv1_channels, kernel_size, padding=kernel_size // 2
+            )
+        )
         layers.append(nn.ReLU())
         layers.append(nn.MaxPool2d(2))
 
@@ -72,7 +76,14 @@ class CIFAR10CNN(nn.Module):
         current_channels = conv1_channels
         for i in range(1, num_conv_layers):
             next_channels = conv2_channels if i == 1 else min(conv2_channels * 2, 256)
-            layers.append(nn.Conv2d(current_channels, next_channels, kernel_size, padding=kernel_size//2))
+            layers.append(
+                nn.Conv2d(
+                    current_channels,
+                    next_channels,
+                    kernel_size,
+                    padding=kernel_size // 2,
+                )
+            )
             layers.append(nn.ReLU())
             layers.append(nn.MaxPool2d(2))
             current_channels = next_channels
@@ -110,17 +121,21 @@ def create_model(params: dict[str, Any]) -> nn.Module:
 
 def load_cifar10_data(batch_size: int = 128, num_samples: int | None = None):
     """Load CIFAR-10 dataset with data augmentation."""
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
+    transform_train = transforms.Compose(
+        [
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ]
+    )
 
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-    ])
+    transform_test = transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+        ]
+    )
 
     trainset = torchvision.datasets.CIFAR10(
         root="./data", train=True, download=True, transform=transform_train
@@ -134,8 +149,12 @@ def load_cifar10_data(batch_size: int = 128, num_samples: int | None = None):
         indices = torch.randperm(len(trainset))[:num_samples].tolist()
         trainset = torch.utils.data.Subset(trainset, indices)
 
-    trainloader = DataLoader(trainset, batch_size=batch_size, shuffle=True, num_workers=2)
-    testloader = DataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=2)
+    trainloader = DataLoader(
+        trainset, batch_size=batch_size, shuffle=True, num_workers=2
+    )
+    testloader = DataLoader(
+        testset, batch_size=batch_size, shuffle=False, num_workers=2
+    )
 
     return trainloader, testloader
 
@@ -185,7 +204,9 @@ def train_objective(
         for data, target in testloader:
             batch_data = data.to(device)
             batch_target = target.to(device)
-            target_expanded = batch_target.unsqueeze(0).expand(model_batch.num_models, -1)
+            target_expanded = batch_target.unsqueeze(0).expand(
+                model_batch.num_models, -1
+            )
             outputs = model_batch(batch_data)
             _, predicted = torch.max(outputs, 2)
             correct += (predicted == target_expanded).sum(dim=1).float()
@@ -200,9 +221,9 @@ def train_objective(
 
 def run_advanced_search():
     """Run advanced search with more complex constraints."""
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print("🔬 Advanced CIFAR-10 Search")
-    print("="*70)
+    print("=" * 70)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     trainloader, testloader = load_cifar10_data(batch_size=128, num_samples=10000)
@@ -214,21 +235,35 @@ def run_advanced_search():
             # CNN-only parameters
             params: dict[str, Any] = {
                 "data.batch_size": 64,
-                "device": torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                "device": torch.device("cuda" if torch.cuda.is_available() else "cpu"),
             }
-            params.update({
-                "model.conv1_channels": (n_channels := trial.suggest_categorical("conv1_channels", [32, 64, 128])),
-                "model.conv2_channels": n_channels,
-                "model.fc1_units": 512,
-                "model.num_conv_layers": trial.suggest_int("num_conv_layers", 2, 3),
-                "model.kernel_size": trial.suggest_categorical("kernel_size", [3, 5]),
-            })
+            params.update(
+                {
+                    "model.conv1_channels": (
+                        n_channels := trial.suggest_categorical(
+                            "conv1_channels", [32, 64, 128]
+                        )
+                    ),
+                    "model.conv2_channels": n_channels,
+                    "model.fc1_units": 512,
+                    "model.num_conv_layers": trial.suggest_int("num_conv_layers", 2, 3),
+                    "model.kernel_size": trial.suggest_categorical(
+                        "kernel_size", [3, 5]
+                    ),
+                }
+            )
             # Common parameters
-            params.update({
-                "model.dropout_rate": trial.suggest_float("dropout_rate", 0.1, 0.6, step=0.1),
-                "optimizer.lr": trial.suggest_float("lr", 5e-4, 5e-2, log=True),
-                "optimizer.weight_decay": trial.suggest_float("weight_decay", 1e-4, 1e-2, log=True),
-            })
+            params.update(
+                {
+                    "model.dropout_rate": trial.suggest_float(
+                        "dropout_rate", 0.1, 0.6, step=0.1
+                    ),
+                    "optimizer.lr": trial.suggest_float("lr", 5e-4, 5e-2, log=True),
+                    "optimizer.weight_decay": trial.suggest_float(
+                        "weight_decay", 1e-4, 1e-2, log=True
+                    ),
+                }
+            )
 
             return params
 
@@ -252,11 +287,7 @@ def run_advanced_search():
             device=device,
         )
 
-    mb_study.optimize(
-        objective_fn=objective_fn,
-        n_trials=50,
-        show_progress_bar=True
-    )
+    mb_study.optimize(objective_fn=objective_fn, n_trials=50, show_progress_bar=True)
 
     print("\n📊 Advanced Results:")
     print(f"Total trials: {len(study.trials)}")

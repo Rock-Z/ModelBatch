@@ -8,6 +8,7 @@ Features:
 - Context managers for timing and custom contexts
 - Logger hierarchy support
 """
+
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -118,8 +119,11 @@ class ContextLogger:
             yield
         finally:
             duration = time.time() - start_time
-            self._log_with_context(log_level, f"Completed {operation}",
-                                 extra={"operation": operation, "duration_seconds": duration})
+            self._log_with_context(
+                log_level,
+                f"Completed {operation}",
+                extra={"operation": operation, "duration_seconds": duration},
+            )
 
 
 class LoggerManager:
@@ -154,8 +158,7 @@ class LoggerManager:
             formatter = JSONFormatter()
         else:
             formatter = logging.Formatter(
-                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                datefmt="%H:%M:%S"
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
             )
 
         # Configure root logger
@@ -202,8 +205,7 @@ class LoggerManager:
             formatter = JSONFormatter()
         else:
             formatter = logging.Formatter(
-                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                datefmt="%H:%M:%S"
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"
             )
 
         Path(log_file).parent.mkdir(parents=True, exist_ok=True)
@@ -215,31 +217,38 @@ class LoggerManager:
 # Global manager instance
 _manager = LoggerManager()
 
+
 # Public API
 def get_logger(name: str) -> ContextLogger:
     """Get a context logger by name."""
     return _manager.get_logger(name)
 
+
 def configure_logging(**kwargs) -> None:
     """Configure the logging system."""
     _manager.configure(**kwargs)
+
 
 def set_log_level(level: str) -> None:
     """Set logging level at runtime."""
     _manager.set_level(level)
 
+
 def add_file_handler(log_file: str, log_format: str = "console") -> None:
     """Add file handler to existing configuration."""
     _manager.add_file_handler(log_file, log_format)
+
 
 # Convenience function for common logger names
 def get_core_logger() -> ContextLogger:
     """Get logger for core module."""
     return get_logger("modelbatch.core")
 
+
 def get_optuna_logger() -> ContextLogger:
     """Get logger for optuna integration."""
     return get_logger("modelbatch.optuna")
+
 
 def get_training_logger() -> ContextLogger:
     """Get logger for training operations."""

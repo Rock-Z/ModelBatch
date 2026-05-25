@@ -60,7 +60,7 @@ class DataRouter:
                 raise ValueError("Indices required for indices mode")
 
             return self._route_by_indices(batch, indices)
-        
+
         else:
             raise ValueError(f"Unknown mode: {self.mode}")
 

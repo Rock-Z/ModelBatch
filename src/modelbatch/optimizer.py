@@ -103,7 +103,9 @@ class OptimizerFactory:
                 self._model_parameters = model_parameters
 
                 for name, stacked in model_batch.stacked_params.items():
-                    views = [model_parameters[i][name] for i in range(model_batch.num_models)]
+                    views = [
+                        model_parameters[i][name] for i in range(model_batch.num_models)
+                    ]
 
                     def hook(grad, views=views):
                         for idx, view in enumerate(views):
@@ -148,4 +150,3 @@ class OptimizerFactory:
             schedulers.append(scheduler)
 
         return schedulers
-

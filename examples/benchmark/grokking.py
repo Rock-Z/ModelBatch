@@ -104,18 +104,36 @@ class SmallTransformerClassifier(nn.Module):
         self.ln2 = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(num_layers)])
 
         # Per-block attention projections (q, k, v, out)
-        self.q_proj = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_layers)])
-        self.k_proj = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_layers)])
-        self.v_proj = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_layers)])
-        self.o_proj = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(num_layers)])
-        self.attn_drop = nn.ModuleList([nn.Dropout(dropout_rate) for _ in range(num_layers)])
-        self.resid_drop = nn.ModuleList([nn.Dropout(dropout_rate) for _ in range(num_layers)])
+        self.q_proj = nn.ModuleList(
+            [nn.Linear(d_model, d_model) for _ in range(num_layers)]
+        )
+        self.k_proj = nn.ModuleList(
+            [nn.Linear(d_model, d_model) for _ in range(num_layers)]
+        )
+        self.v_proj = nn.ModuleList(
+            [nn.Linear(d_model, d_model) for _ in range(num_layers)]
+        )
+        self.o_proj = nn.ModuleList(
+            [nn.Linear(d_model, d_model) for _ in range(num_layers)]
+        )
+        self.attn_drop = nn.ModuleList(
+            [nn.Dropout(dropout_rate) for _ in range(num_layers)]
+        )
+        self.resid_drop = nn.ModuleList(
+            [nn.Dropout(dropout_rate) for _ in range(num_layers)]
+        )
 
         # Per-block MLP
         hidden_dim = mlp_hidden_mult * d_model
-        self.fc1 = nn.ModuleList([nn.Linear(d_model, hidden_dim) for _ in range(num_layers)])
-        self.fc2 = nn.ModuleList([nn.Linear(hidden_dim, d_model) for _ in range(num_layers)])
-        self.mlp_drop = nn.ModuleList([nn.Dropout(dropout_rate) for _ in range(num_layers)])
+        self.fc1 = nn.ModuleList(
+            [nn.Linear(d_model, hidden_dim) for _ in range(num_layers)]
+        )
+        self.fc2 = nn.ModuleList(
+            [nn.Linear(hidden_dim, d_model) for _ in range(num_layers)]
+        )
+        self.mlp_drop = nn.ModuleList(
+            [nn.Dropout(dropout_rate) for _ in range(num_layers)]
+        )
 
         # Final layer norm and classifier
         self.ln_f = nn.LayerNorm(d_model)
@@ -123,7 +141,9 @@ class SmallTransformerClassifier(nn.Module):
 
         # Buffers
         self.position_ids: torch.Tensor
-        self.register_buffer("position_ids", torch.arange(0, max_seq_len).unsqueeze(0), persistent=False)
+        self.register_buffer(
+            "position_ids", torch.arange(0, max_seq_len).unsqueeze(0), persistent=False
+        )
 
     def _attend(self, x: torch.Tensor, layer_idx: int) -> torch.Tensor:
         # x: [batch, seq, d_model]
@@ -134,17 +154,23 @@ class SmallTransformerClassifier(nn.Module):
 
         # reshape to [batch, nhead, seq, head_dim]
         def split_heads(t: torch.Tensor) -> torch.Tensor:
-            return t.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(1, 2)
+            return t.view(batch_size, seq_len, self.nhead, self.head_dim).transpose(
+                1, 2
+            )
 
         q = split_heads(q)
         k = split_heads(k)
         v = split_heads(v)
 
-        scale = 1.0 / (self.head_dim ** 0.5)
+        scale = 1.0 / (self.head_dim**0.5)
         attn_scores = torch.matmul(q, k.transpose(-2, -1)) * scale  # [B, H, T, T]
         # Causal mask
-        causal_mask = torch.tril(torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool))
-        attn_scores = attn_scores.masked_fill(~causal_mask.view(1, 1, seq_len, seq_len), float("-inf"))
+        causal_mask = torch.tril(
+            torch.ones(seq_len, seq_len, device=x.device, dtype=torch.bool)
+        )
+        attn_scores = attn_scores.masked_fill(
+            ~causal_mask.view(1, 1, seq_len, seq_len), float("-inf")
+        )
         attn = torch.softmax(attn_scores, dim=-1)
         attn = self.attn_drop[layer_idx](attn)
         y = torch.matmul(attn, v)  # [B, H, T, head_dim]
@@ -189,7 +215,9 @@ def load_grokking_data(
 ) -> tuple[DataLoader, DataLoader]:
     """Build DataLoaders for the modular addition task."""
 
-    config = ModularAdditionConfig(modulus=modulus, sequence_length=2, num_train=num_train, num_test=num_test)
+    config = ModularAdditionConfig(
+        modulus=modulus, sequence_length=2, num_train=num_train, num_test=num_test
+    )
     train_ds = ModularAdditionDataset(config=config, split="train")
     test_ds = ModularAdditionDataset(config=config, split="test")
 
@@ -201,8 +229,17 @@ def load_grokking_data(
     g = torch.Generator()
     g.manual_seed(6325)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, generator=g, worker_init_fn=seed_worker)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=4)
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=4,
+        generator=g,
+        worker_init_fn=seed_worker,
+    )
+    test_loader = DataLoader(
+        test_ds, batch_size=batch_size, shuffle=False, num_workers=4
+    )
     return train_loader, test_loader
 
 
@@ -285,7 +322,10 @@ def run_benchmark(
     sequential_accuracies = evaluate_accuracy(
         sequential_models, testloader, device, is_batch=False
     )
-    _ = (batch_accuracies, sequential_accuracies)  # kept for parity and potential debugging
+    _ = (
+        batch_accuracies,
+        sequential_accuracies,
+    )  # kept for parity and potential debugging
 
     # GPU memory (if any)
     if torch.cuda.is_available():
@@ -334,5 +374,3 @@ if __name__ == "__main__":
         print(f"{r['num_models']:<8} {r['speedup']:<10.1f}")
     print(f"\n{'=' * 60}")
     print("BENCHMARK COMPLETE!")
-
-

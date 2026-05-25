@@ -31,7 +31,7 @@ __all__ = [
     "get_logger",
     "get_optuna_logger",
     "get_training_logger",
-    "set_log_level"
+    "set_log_level",
 ]
 
 # Optional integrations (only available if dependencies are installed)

@@ -25,6 +25,8 @@ from utils import (
     train_sequential,
     train_modelbatch,
 )
+
+
 # set_random_seeds is imported from benchmark_utils
 class LeNet5CIFAR(nn.Module):
     """LeNet-5 adapted for CIFAR10."""
@@ -140,9 +142,7 @@ def run_benchmark(
     )
     train_ds = cast(Sized, trainloader.dataset)
     test_ds = cast(Sized, testloader.dataset)
-    print(
-        f"Training samples: {len(train_ds)}, Test samples: {len(test_ds)}"
-    )
+    print(f"Training samples: {len(train_ds)}, Test samples: {len(test_ds)}")
 
     # Create hyperparameter variations
     dropout_rates = [0.1 + 0.02 * i for i in range(num_models)]
@@ -200,6 +200,8 @@ def run_benchmark(
         "batch_time": batch_time,
         "speedup": speedup,
     }
+
+
 if __name__ == "__main__":
     print("ModelBatch CIFAR10 LeNet Benchmark")
 

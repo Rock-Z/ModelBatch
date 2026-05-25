@@ -38,7 +38,7 @@ class TestJSONFormatter:
             lineno=42,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         output = formatter.format(record)
@@ -59,7 +59,7 @@ class TestJSONFormatter:
             lineno=42,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         # Add extra fields
         record.trial_id = 123
@@ -81,7 +81,7 @@ class TestJSONFormatter:
             lineno=42,
             msg="Test message %s %d",
             args=("arg1", 42),
-            exc_info=None
+            exc_info=None,
         )
 
         output = formatter.format(record)
@@ -221,9 +221,7 @@ class TestLoggerManager:
                 mock_get_logger.return_value = mock_root
 
                 self.manager.configure(
-                    level="INFO",
-                    log_file=str(log_file),
-                    console=True
+                    level="INFO", log_file=str(log_file), console=True
                 )
 
                 assert self.manager._configured
@@ -244,11 +242,17 @@ class TestLoggerManager:
 
     def test_environment_variables(self, tmp_path):
         """Test environment variable configuration."""
-        with patch.dict(os.environ, {
-            "LOG_LEVEL": "WARNING",
-            "LOG_FORMAT": "json",
-            "LOG_FILE": str(tmp_path / "test.log"),
-        }), patch("logging.getLogger") as mock_get_logger:
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "LOG_LEVEL": "WARNING",
+                    "LOG_FORMAT": "json",
+                    "LOG_FILE": str(tmp_path / "test.log"),
+                },
+            ),
+            patch("logging.getLogger") as mock_get_logger,
+        ):
             mock_root = MagicMock()
             mock_get_logger.return_value = mock_root
 
@@ -347,11 +351,7 @@ class TestIntegration:
 
             # Create a fresh manager for this test to avoid singleton issues
             manager = LoggerManager()
-            manager.configure(
-                level="DEBUG",
-                log_file=str(log_file),
-                log_format="json"
-            )
+            manager.configure(level="DEBUG", log_file=str(log_file), log_format="json")
 
             # Get logger and use it
             logger = manager.get_logger("test.integration")
@@ -411,10 +411,7 @@ class TestIntegration:
 
     def test_environment_configuration_integration(self):
         """Test environment-based configuration."""
-        with patch.dict(os.environ, {
-            "LOG_LEVEL": "ERROR",
-            "LOG_FORMAT": "console"
-        }):
+        with patch.dict(os.environ, {"LOG_LEVEL": "ERROR", "LOG_FORMAT": "console"}):
             # Create new manager to test env config
             manager = LoggerManager()
             logger = manager.get_logger("test.env")

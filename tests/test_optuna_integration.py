@@ -46,7 +46,7 @@ class TestConstraintSpec:
         """Test basic constraint specification creation."""
         spec = ConstraintSpec(
             fixed_params=["model.hidden_size", "model.input_size"],
-            variable_params=["model.dropout_rate", "optimizer.lr"]
+            variable_params=["model.dropout_rate", "optimizer.lr"],
         )
 
         assert spec.fixed_params == ["model.hidden_size", "model.input_size"]
@@ -56,13 +56,24 @@ class TestConstraintSpec:
     def test_constraint_key_generation(self):
         """Test constraint key generation for grouping."""
         spec = ConstraintSpec(
-            fixed_params=["model.hidden_size"],
-            batch_aware_params=["data.batch_size"]
+            fixed_params=["model.hidden_size"], batch_aware_params=["data.batch_size"]
         )
 
-        params1 = {"model.hidden_size": 64, "data.batch_size": 32, "model.dropout_rate": 0.1}
-        params2 = {"model.hidden_size": 64, "data.batch_size": 32, "model.dropout_rate": 0.2}
-        params3 = {"model.hidden_size": 128, "data.batch_size": 32, "model.dropout_rate": 0.1}
+        params1 = {
+            "model.hidden_size": 64,
+            "data.batch_size": 32,
+            "model.dropout_rate": 0.1,
+        }
+        params2 = {
+            "model.hidden_size": 64,
+            "data.batch_size": 32,
+            "model.dropout_rate": 0.2,
+        }
+        params3 = {
+            "model.hidden_size": 128,
+            "data.batch_size": 32,
+            "model.dropout_rate": 0.1,
+        }
 
         key1 = spec.get_constraint_key(params1)
         key2 = spec.get_constraint_key(params2)
@@ -77,7 +88,7 @@ class TestConstraintSpec:
         with pytest.raises(ValueError, match="both fixed and variable"):
             ConstraintSpec(
                 fixed_params=["model.hidden_size"],
-                variable_params=["model.hidden_size"]  # Overlaps with fixed
+                variable_params=["model.hidden_size"],  # Overlaps with fixed
             )
 
 
@@ -89,13 +100,14 @@ class TestBatchGroup:
         group = BatchGroup(
             group_id="test_group",
             constraint_key="abc123",
-            constraint_params={"model.hidden_size": 64}
+            constraint_params={"model.hidden_size": 64},
         )
 
         assert group.group_id == "test_group"
         assert group.constraint_key == "abc123"
         assert group.constraint_params == {"model.hidden_size": 64}
         from modelbatch.optuna_integration import BatchState  # noqa: PLC0415
+
         assert group.state == BatchState.PENDING
         assert len(group.trials) == 0
 
@@ -162,8 +174,7 @@ class TestTrialBatcher:
     def test_trial_grouping(self):
         """Test trial grouping by constraints."""
         spec = ConstraintSpec(
-            fixed_params=["model.hidden_size"],
-            variable_params=["optimizer.lr"]
+            fixed_params=["model.hidden_size"], variable_params=["optimizer.lr"]
         )
         batcher = TrialBatcher(spec)
         study = optuna.create_study()
@@ -268,7 +279,9 @@ class TestIntegration:
         class TestStudy(ModelBatchStudy):
             def suggest_parameters(self, trial):
                 return {
-                    "model.hidden_size": trial.suggest_int("hidden_size", 16, 32, step=16),
+                    "model.hidden_size": trial.suggest_int(
+                        "hidden_size", 16, 32, step=16
+                    ),
                     "model.dropout_rate": trial.suggest_float("dropout_rate", 0.0, 0.5),
                     "optimizer.lr": trial.suggest_float("lr", 1e-3, 1e-1, log=True),
                 }
@@ -280,7 +293,7 @@ class TestIntegration:
         study = optuna.create_study(direction="maximize")
         spec = ConstraintSpec(
             fixed_params=["model.hidden_size"],
-            variable_params=["model.dropout_rate", "optimizer.lr"]
+            variable_params=["model.dropout_rate", "optimizer.lr"],
         )
 
         mb_study = TestStudy(
@@ -295,7 +308,7 @@ class TestIntegration:
         mb_study.optimize(
             objective_fn=train_fn,
             n_trials=4,  # Use fewer trials to avoid batching issues
-            show_progress_bar=False
+            show_progress_bar=False,
         )
 
         # Verify results
@@ -322,20 +335,20 @@ class TestConstraintValidation:
         with pytest.raises(ValueError, match="both fixed and variable"):
             ConstraintSpec(
                 fixed_params=["model.size"],
-                variable_params=["model.size"]  # Should overlap
+                variable_params=["model.size"],  # Should overlap
             )
 
     def test_complex_parameter_nesting(self):
         """Test constraint key with nested parameters."""
         spec = ConstraintSpec(
             fixed_params=["model.config.hidden_size"],
-            batch_aware_params=["data.batch_size"]
+            batch_aware_params=["data.batch_size"],
         )
 
         params = {
             "model.config.hidden_size": 768,
             "data.batch_size": 32,
-            "optimizer.lr": 0.001
+            "optimizer.lr": 0.001,
         }
 
         key = spec.get_constraint_key(params)
