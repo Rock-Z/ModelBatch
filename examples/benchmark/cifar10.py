@@ -22,12 +22,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from utils import (
     set_random_seeds,
     evaluate_accuracy,
-    train_sequential,
+    estimate_sequential_time,
     train_modelbatch,
 )
 
 
-# set_random_seeds is imported from benchmark_utils
 class LeNet5CIFAR(nn.Module):
     """LeNet-5 adapted for CIFAR10."""
 
@@ -110,15 +109,6 @@ def load_cifar10_data(
     return trainloader, testloader
 
 
-# evaluate_accuracy is imported from benchmark_utils
-
-
-# train_sequential is imported from benchmark_utils
-
-
-# train_modelbatch is imported from benchmark_utils
-
-
 def run_benchmark(
     num_models: int = 16,
     num_epochs: int = 5,
@@ -156,11 +146,16 @@ def run_benchmark(
     sample_params = sum(p.numel() for p in models[0].parameters())
     print(f"Parameters per model: {sample_params:,}")
 
-    # Sequential training
+    # Sequential baseline
     print("\n" + "=" * 60)
-    sequential_models = [copy.deepcopy(models[i]) for i in range(num_models)]
-    sequential_time = train_sequential(
-        sequential_models, trainloader, num_epochs, learning_rates, device
+    sequential_model = copy.deepcopy(models[0])
+    sequential_time = estimate_sequential_time(
+        sequential_model,
+        trainloader,
+        num_epochs,
+        learning_rates[0],
+        device,
+        num_models=num_models,
     )
 
     # ModelBatch training
@@ -179,10 +174,12 @@ def run_benchmark(
     print(f"ModelBatch: {batch_time:.2f}s")
     print(f"Speedup: {speedup:.1f}x")
 
-    # Verify equivalence with seeded training
+    # Check the trained batched models.
     batch_accuracies = evaluate_accuracy(model_batch, testloader, device, is_batch=True)
-    sequential_accuracies = evaluate_accuracy(
-        sequential_models, testloader, device, is_batch=False
+    print(
+        "ModelBatch accuracy: "
+        f"mean={np.mean(batch_accuracies):.1f}%, "
+        f"range={min(batch_accuracies):.1f}-{max(batch_accuracies):.1f}%"
     )
 
     # Memory usage

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import random
 import time
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import torch
@@ -88,34 +88,39 @@ def evaluate_accuracy(
     return accuracies
 
 
-def train_sequential(
-    models: Iterable[torch.nn.Module],
+def estimate_sequential_time(
+    model: torch.nn.Module,
     trainloader: DataLoader,
     num_epochs: int,
-    learning_rates: Sequence[float],
+    learning_rate: float,
     device: torch.device,
+    *,
+    num_models: int,
 ) -> float:
-    """Train models sequentially (baseline)."""
-    print("Sequential Training")
+    """Estimate sequential baseline by timing one representative model."""
+    print("Sequential Training (1 model, extrapolated)")
     start_time = time.time()
 
-    for model, lr in zip(models, learning_rates):
-        set_random_seeds()
-        model.to(device).train()
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        for _epoch in range(num_epochs):
-            for batch_inputs, batch_labels in trainloader:
-                inputs = batch_inputs.to(device)
-                labels = batch_labels.to(device)
-                optimizer.zero_grad()
-                logits = model(inputs)
-                loss = F.cross_entropy(logits, labels)
-                loss.backward()
-                optimizer.step()
+    set_random_seeds()
+    model.to(device).train()
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    for _epoch in range(num_epochs):
+        for batch_inputs, batch_labels in trainloader:
+            inputs = batch_inputs.to(device)
+            labels = batch_labels.to(device)
+            optimizer.zero_grad()
+            logits = model(inputs)
+            loss = F.cross_entropy(logits, labels)
+            loss.backward()
+            optimizer.step()
 
-    total_time = time.time() - start_time
-    print(f"Sequential time: {total_time:.2f}s")
-    return total_time
+    single_model_time = time.time() - start_time
+    estimated_time = single_model_time * num_models
+    print(
+        f"Sequential time: {estimated_time:.2f}s "
+        f"(estimated from {single_model_time:.2f}s/model x {num_models})"
+    )
+    return estimated_time
 
 
 def train_modelbatch(

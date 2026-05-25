@@ -23,12 +23,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from utils import (
     set_random_seeds,
     evaluate_accuracy,
-    train_sequential,
+    estimate_sequential_time,
     train_modelbatch,
 )
-
-
-# set_random_seeds is imported from benchmark_utils
 
 
 @dataclass
@@ -297,9 +294,14 @@ def run_benchmark(
 
     # Sequential baseline
     print("\n" + "=" * 60)
-    sequential_models = [copy.deepcopy(models[i]) for i in range(num_models)]
-    sequential_time = train_sequential(
-        sequential_models, trainloader, num_epochs, learning_rates, device
+    sequential_model = copy.deepcopy(models[0])
+    sequential_time = estimate_sequential_time(
+        sequential_model,
+        trainloader,
+        num_epochs,
+        learning_rates[0],
+        device,
+        num_models=num_models,
     )
 
     # ModelBatch training
@@ -317,15 +319,13 @@ def run_benchmark(
     print(f"ModelBatch: {batch_time:.2f}s")
     print(f"Speedup: {speedup:.1f}x")
 
-    # Verify accuracy computation
+    # Check the trained batched models.
     batch_accuracies = evaluate_accuracy(model_batch, testloader, device, is_batch=True)
-    sequential_accuracies = evaluate_accuracy(
-        sequential_models, testloader, device, is_batch=False
+    print(
+        "ModelBatch accuracy: "
+        f"mean={np.mean(batch_accuracies):.1f}%, "
+        f"range={min(batch_accuracies):.1f}-{max(batch_accuracies):.1f}%"
     )
-    _ = (
-        batch_accuracies,
-        sequential_accuracies,
-    )  # kept for parity and potential debugging
 
     # GPU memory (if any)
     if torch.cuda.is_available():
