@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
-import sys
 import time
-from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -17,11 +15,8 @@ from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModel
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
 from utils import set_random_seeds
-from modelbatch import ModelBatch, OptimizerFactory, DataRouter
-from modelbatch.data import StratifiedDataRouter
+from modelbatch import ModelBatch, OptimizerFactory
 from modelbatch.utils import count_parameters
 
 
@@ -70,11 +65,13 @@ class BERTFeatureExtractor(nn.Module):
         # Freeze BERT weights
         for param in self.bert.parameters():
             param.requires_grad = False
+        self.bert.eval()
 
     def forward(
         self, input_ids: torch.Tensor, attention_mask: torch.Tensor
     ) -> dict[int, torch.Tensor]:
         """Extract features from all BERT layers."""
+        self.bert.eval()
         with torch.no_grad():
             outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
             hidden_states = (
@@ -113,7 +110,7 @@ class UDPOSDataset(Dataset):
         }
 
 
-def load_ud_pos_data(
+def load_ud_pos_data(  # noqa: PLR0915
     batch_size: int = 16, max_length: int = 128, model_name: str = "bert-base-uncased"
 ):
     """Load batterydata/pos_tagging and create DataLoaders with proper tokenization."""
@@ -124,11 +121,12 @@ def load_ud_pos_data(
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-    def process_split(split_data):
-        """Process a dataset split and return tokenized inputs with aligned labels."""
+    def extract_split(split_data):
+        """Extract token/POS sequences from a dataset split."""
         sentences = []
         pos_sequences = []
         all_pos_tags = set()
+        max_pos_tag = -1
 
         for example in split_data:
             tokens = None
@@ -136,14 +134,12 @@ def load_ud_pos_data(
 
             # Try different field names for tokens
             for field in ["tokens", "words", "text", "sentence"]:
-                if field in example and example[field]:
-                    tokens = example[field]
+                if tokens := example.get(field):
                     break
 
             # Try different field names for POS tags
             for field in ["pos_tags", "upos", "tags", "pos", "labels", "ner_tags"]:
-                if field in example and example[field]:
-                    pos_tags = example[field]
+                if pos_tags := example.get(field):
                     break
 
             if tokens and pos_tags and len(tokens) == len(pos_tags):
@@ -151,39 +147,60 @@ def load_ud_pos_data(
                 pos_sequences.append(pos_tags)
                 if pos_tags and isinstance(pos_tags[0], str):
                     all_pos_tags.update(pos_tags)
+                elif pos_tags:
+                    max_pos_tag = max(max_pos_tag, *pos_tags)
 
         if not sentences:
             raise ValueError(
                 "Could not extract valid sentences and POS tags from dataset"
             )
 
-        # Create tag mapping for string tags
-        if all_pos_tags:
-            tag_to_id = {tag: i for i, tag in enumerate(sorted(list(all_pos_tags)))}
-            pos_sequences = [
-                [tag_to_id.get(tag, -100) for tag in seq] for seq in pos_sequences
-            ]
-            num_tags = len(tag_to_id)
-        else:
-            # Integer tags - find max value
-            num_tags = max(max(seq) for seq in pos_sequences) + 1
-
-        return sentences, pos_sequences, num_tags
+        return sentences, pos_sequences, all_pos_tags, max_pos_tag
 
     # Process train and test splits
-    train_sentences, train_pos_sequences, num_pos_tags = process_split(dataset["train"])
+    (
+        train_sentences,
+        train_pos_sequences,
+        train_pos_tags,
+        train_max_pos_tag,
+    ) = extract_split(dataset["train"])
     try:
-        test_sentences, test_pos_sequences, _ = process_split(dataset["test"])
+        (
+            test_sentences,
+            test_pos_sequences,
+            test_pos_tags,
+            test_max_pos_tag,
+        ) = extract_split(dataset["test"])
     except KeyError:
         # Use validation or split train data
         if "validation" in dataset:
-            test_sentences, test_pos_sequences, _ = process_split(dataset["validation"])
+            (
+                test_sentences,
+                test_pos_sequences,
+                test_pos_tags,
+                test_max_pos_tag,
+            ) = extract_split(dataset["validation"])
         else:
             split_idx = len(train_sentences) // 5
             test_sentences = train_sentences[-split_idx:]
             test_pos_sequences = train_pos_sequences[-split_idx:]
             train_sentences = train_sentences[:-split_idx]
             train_pos_sequences = train_pos_sequences[:-split_idx]
+            test_pos_tags = set()
+            test_max_pos_tag = -1
+
+    all_pos_tags = train_pos_tags | test_pos_tags
+    if all_pos_tags:
+        tag_to_id = {tag: i for i, tag in enumerate(sorted(all_pos_tags))}
+        train_pos_sequences = [
+            [tag_to_id.get(tag, -100) for tag in seq] for seq in train_pos_sequences
+        ]
+        test_pos_sequences = [
+            [tag_to_id.get(tag, -100) for tag in seq] for seq in test_pos_sequences
+        ]
+        num_pos_tags = len(tag_to_id)
+    else:
+        num_pos_tags = max(train_max_pos_tag, test_max_pos_tag) + 1
 
     print(f"Dataset: batterydata/pos_tagging, POS tags: {num_pos_tags}")
 
@@ -279,46 +296,20 @@ def evaluate_token_accuracy(
                 labels = batch["labels"].to(device)
 
                 layer_outputs = bert_extractor(input_ids, attention_mask)
-
-                # Create round-robin indices per model
-                strat_router = StratifiedDataRouter(
-                    models_or_batch.num_models, strategy="round_robin"
+                per_model_inputs = torch.stack(
+                    [layer_outputs[layer_idx] for layer_idx in target_layers],
+                    dim=0,
                 )
-                rr_indices = strat_router.create_stratified_indices(labels[:, 0])
-                subset_sizes = [len(idx) for idx in rr_indices]
-                max_subset = max(subset_sizes)
-
-                # Build per-model inputs
-                per_model_inputs = torch.zeros(
-                    (
-                        models_or_batch.num_models,
-                        max_subset,
-                        layer_outputs[target_layers[0]].shape[1],
-                        layer_outputs[target_layers[0]].shape[2],
-                    ),
-                    dtype=layer_outputs[target_layers[0]].dtype,
-                    device=device,
-                )
-                for i in range(models_or_batch.num_models):
-                    li = target_layers[i]
-                    if subset_sizes[i] > 0:
-                        per_model_inputs[i, : subset_sizes[i]] = layer_outputs[li][
-                            rr_indices[i]
-                        ]
 
                 logits = models_or_batch(per_model_inputs)
                 preds = logits.argmax(dim=3)
 
-                # Route labels and compute accuracy
-                base_router = DataRouter(mode="indices")
-                labels_routed = base_router.route_batch(labels, indices=rr_indices)
-                for i in range(models_or_batch.num_models):
-                    if subset_sizes[i] < max_subset:
-                        labels_routed[i, subset_sizes[i] :] = -100
-
-                valid_mask = labels_routed != -100
+                labels_expanded = labels.unsqueeze(0).expand(
+                    models_or_batch.num_models, -1, -1
+                )
+                valid_mask = labels_expanded != -100
                 correct += (
-                    ((preds == labels_routed) & valid_mask).sum(dim=[1, 2]).float()
+                    ((preds == labels_expanded) & valid_mask).sum(dim=[1, 2]).float()
                 )
                 total += valid_mask.sum(dim=[1, 2]).float()
 
@@ -356,6 +347,7 @@ def train_sequential_token_probes(
     learning_rates: list[float],
     num_epochs: int,
     device: torch.device,
+    weight_decay: float = 0.01,
 ) -> tuple[list[float], list[BERTTokenLevelProbe]]:
     """Train token-level probes sequentially for each target layer."""
     print("Sequential Token-Level Training")
@@ -367,7 +359,9 @@ def train_sequential_token_probes(
         start_time = time.time()
         set_random_seeds()
         model.to(device).train()
-        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=learning_rate, weight_decay=weight_decay
+        )
 
         for _epoch in range(num_epochs):
             for batch in train_loader:
@@ -380,8 +374,8 @@ def train_sequential_token_probes(
                     features = bert_extractor(input_ids, attention_mask)[target_layer]
                 logits = model(features)
                 loss = F.cross_entropy(
-                    logits.view(-1, logits.size(-1)),
-                    labels.view(-1),
+                    logits.reshape(-1, logits.size(-1)),
+                    labels.reshape(-1),
                     ignore_index=-100,
                 )
                 loss.backward()
@@ -403,6 +397,7 @@ def train_modelbatch_token_probes(
     learning_rates: list[float],
     num_epochs: int,
     device: torch.device,
+    weight_decay: float = 0.01,
 ) -> tuple[float, ModelBatch]:
     """Train token-level probes with ModelBatch."""
     print("ModelBatch Token-Level Training")
@@ -416,13 +411,11 @@ def train_modelbatch_token_probes(
         f"Total parameters: {param_info['total_params']:,} ({model_batch.num_models} models)"
     )
 
-    optimizer_factory = OptimizerFactory(torch.optim.Adam)
-    optimizer_configs = create_adam_configs(learning_rates)
+    optimizer_factory = OptimizerFactory(torch.optim.AdamW)
+    optimizer_configs = create_adam_configs(learning_rates, weight_decay=weight_decay)
     optimizer = optimizer_factory.create_optimizer(model_batch, optimizer_configs)
 
     start_time = time.time()
-    router = DataRouter(mode="indices")
-    strat_router = StratifiedDataRouter(model_batch.num_models, strategy="round_robin")
 
     for _epoch in range(num_epochs):
         model_batch.train()
@@ -435,29 +428,10 @@ def train_modelbatch_token_probes(
             with torch.no_grad():
                 layer_outputs = bert_extractor(input_ids, attention_mask)
 
-            # Create round-robin indices and build per-model inputs
-            rr_indices = strat_router.create_stratified_indices(labels[:, 0])
-            subset_sizes = [len(idx) for idx in rr_indices]
-            max_subset = max(subset_sizes)
-
-            _, seq_len, hidden = layer_outputs[target_layers[0]].shape
-            per_model_inputs = torch.zeros(
-                (model_batch.num_models, max_subset, seq_len, hidden),
-                dtype=layer_outputs[target_layers[0]].dtype,
-                device=device,
+            per_model_inputs = torch.stack(
+                [layer_outputs[layer_idx] for layer_idx in target_layers],
+                dim=0,
             )
-            for i in range(model_batch.num_models):
-                li = target_layers[i]
-                if subset_sizes[i] > 0:
-                    per_model_inputs[i, : subset_sizes[i]] = layer_outputs[li][
-                        rr_indices[i]
-                    ]
-
-            # Route labels and train
-            labels_routed = router.route_batch(labels, indices=rr_indices)
-            for i in range(model_batch.num_models):
-                if subset_sizes[i] < max_subset:
-                    labels_routed[i, subset_sizes[i] :] = -100
 
             logits = model_batch(per_model_inputs)
 
@@ -465,13 +439,13 @@ def train_modelbatch_token_probes(
                 model_logits: torch.Tensor, model_labels: torch.Tensor
             ) -> torch.Tensor:
                 return F.cross_entropy(
-                    model_logits.view(-1, model_logits.size(-1)),
-                    model_labels.view(-1),
+                    model_logits.reshape(-1, model_logits.size(-1)),
+                    model_labels.reshape(-1),
                     ignore_index=-100,
                 )
 
             loss = model_batch.compute_loss(
-                logits, labels_routed, token_loss_fn, reduction="mean"
+                logits, labels, token_loss_fn, reduction="sum"
             )
             loss.backward()
             optimizer.step()
@@ -494,26 +468,38 @@ if __name__ == "__main__":
         {"num_layers": 9},
         {"num_layers": 12},
     ]
-    num_epochs = 2
-    batch_size = 16
+    model_name = "bert-base-uncased"
+    num_epochs = 5
+    batch_size = 32
     max_length = 128
+    learning_rate = 1e-3
+    dropout_rate = 0.0
+    weight_decay = 0.01
     max_num_layers = max(config["num_layers"] for config in configs)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
+    print(
+        "Probe hparams: "
+        f"epochs={num_epochs}, batch_size={batch_size}, "
+        f"lr={learning_rate:g}, dropout={dropout_rate:g}, "
+        f"weight_decay={weight_decay:g}"
+    )
 
     # Load data
-    train_loader, test_loader, num_pos_tags = load_ud_pos_data(batch_size, max_length)
+    train_loader, test_loader, num_pos_tags = load_ud_pos_data(
+        batch_size, max_length, model_name
+    )
 
     # Create BERT feature extractor
-    bert_extractor = BERTFeatureExtractor().to(device)
+    bert_extractor = BERTFeatureExtractor(model_name).to(device)
 
     # Create probe models for different layers
     target_layers_all = list(
         range(1, min(max_num_layers + 1, bert_extractor.num_layers + 1))
     )
-    learning_rates = [1e-3 * (0.8**i) for i in range(len(target_layers_all))]
-    dropout_rates = [0.1 + 0.02 * i for i in range(len(target_layers_all))]
+    learning_rates = [learning_rate for _ in target_layers_all]
+    dropout_rates = [dropout_rate for _ in target_layers_all]
 
     set_random_seeds()
     models = [
@@ -527,7 +513,9 @@ if __name__ == "__main__":
 
     # Sequential baseline: train each layer probe separately.
     print("\n" + "=" * 60)
-    sequential_models = [copy.deepcopy(models[i]) for i in range(len(target_layers_all))]
+    sequential_models = [
+        copy.deepcopy(models[i]) for i in range(len(target_layers_all))
+    ]
     sequential_times, sequential_models = train_sequential_token_probes(
         sequential_models,
         bert_extractor,
@@ -536,6 +524,7 @@ if __name__ == "__main__":
         learning_rates,
         num_epochs,
         device,
+        weight_decay,
     )
 
     results = []
@@ -554,6 +543,7 @@ if __name__ == "__main__":
             learning_rates[:num_layers],
             num_epochs,
             device,
+            weight_decay,
         )
 
         sequential_time = sum(sequential_times[:num_layers])
