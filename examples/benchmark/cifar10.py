@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Sized, cast
 import random
 import sys
-import time
+from typing import Sized, cast
 
 import numpy as np
 import torch
@@ -22,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from utils import (
     set_random_seeds,
     evaluate_accuracy,
-    estimate_sequential_time,
+    train_single_model,
     train_modelbatch,
 )
 
@@ -53,7 +52,10 @@ class LeNet5CIFAR(nn.Module):
 
 
 def load_cifar10_data(
-    batch_size: int = 128, num_samples: int | None = None
+    batch_size: int = 256,
+    num_samples: int | None = None,
+    num_workers: int = 4,
+    prefetch_factor: int = 4,
 ) -> tuple[DataLoader, DataLoader]:
     """Load CIFAR10 with standard preprocessing."""
     transform_train = transforms.Compose(
@@ -94,32 +96,43 @@ def load_cifar10_data(
 
     g = torch.Generator()
     g.manual_seed(6325)
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "pin_memory": torch.cuda.is_available(),
+        "persistent_workers": num_workers > 0,
+    }
+    if num_workers > 0:
+        loader_kwargs["prefetch_factor"] = prefetch_factor
 
     trainloader = DataLoader(
         trainset,
-        batch_size=batch_size,
         shuffle=True,
-        num_workers=2,
         generator=g,
         worker_init_fn=seed_worker,
+        **loader_kwargs,
     )
-    testloader = DataLoader(
-        testset, batch_size=batch_size, shuffle=False, num_workers=2
-    )
+    testloader = DataLoader(testset, shuffle=False, **loader_kwargs)
     return trainloader, testloader
 
 
-def run_benchmark(
-    num_models: int = 16,
-    num_epochs: int = 5,
-    batch_size: int = 128,
-    num_samples: int = 60000,
-) -> dict[str, float]:
-    """
-    Run CIFAR10 LeNet benchmark. Compare sequential training and ModelBatch training.
-    """
-    print(f"CIFAR10 LeNet Benchmark: {num_models} Models")
+if __name__ == "__main__":
+    print("ModelBatch CIFAR10 LeNet Benchmark")
+
+    print(f"\n{'=' * 60}")
+    print("SCALABILITY STUDY")
     print("=" * 60)
+
+    configs = [
+        {"num_models": 4},
+        {"num_models": 8},
+        {"num_models": 16},
+        {"num_models": 32},
+    ]
+    num_epochs = 30
+    batch_size = 256
+    num_samples = 60000
+    max_num_models = max(config["num_models"] for config in configs)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -134,101 +147,122 @@ def run_benchmark(
     test_ds = cast(Sized, testloader.dataset)
     print(f"Training samples: {len(train_ds)}, Test samples: {len(test_ds)}")
 
-    # Create hyperparameter variations
-    dropout_rates = [0.1 + 0.02 * i for i in range(num_models)]
-    learning_rates = [0.01 * (0.5**i) for i in range(num_models)]
+    # Tutorial-style CIFAR recipe: crop/flip/normalize + SGD momentum + weight decay.
+    dropout_choices = [0.05, 0.10, 0.00, 0.15]
+    learning_rate = 0.05
+    dropout_rates = [
+        dropout_choices[i % len(dropout_choices)] for i in range(max_num_models)
+    ]
     print(f"Dropout range: {min(dropout_rates):.3f}-{max(dropout_rates):.3f}")
-    print(f"Learning rate range: {min(learning_rates):.6f}-{max(learning_rates):.6f}")
+    print(f"Learning rate: {learning_rate:.6f}")
+    print("SGD: momentum=0.9, weight_decay=5e-4, milestones=60%/83%")
 
     # Create models with deterministic initialization
     set_random_seeds()
-    models = [LeNet5CIFAR(dropout_rate=dropout_rates[i]) for i in range(num_models)]
+    models = [
+        LeNet5CIFAR(dropout_rate=dropout_rates[i]) for i in range(max_num_models)
+    ]
     sample_params = sum(p.numel() for p in models[0].parameters())
     print(f"Parameters per model: {sample_params:,}")
 
-    # Sequential baseline
+    # Sequential baseline, trained once.
     print("\n" + "=" * 60)
     sequential_model = copy.deepcopy(models[0])
-    sequential_time = estimate_sequential_time(
+    sequential_time_per_model = train_single_model(
         sequential_model,
         trainloader,
         num_epochs,
-        learning_rates[0],
+        learning_rate,
         device,
-        num_models=num_models,
+        optimizer_cls=torch.optim.SGD,
+        optimizer_config={"momentum": 0.9, "weight_decay": 5e-4, "nesterov": True},
+        scheduler_factory=lambda optimizer: torch.optim.lr_scheduler.MultiStepLR(
+            optimizer,
+            milestones=[num_epochs * 3 // 5, num_epochs * 5 // 6],
+            gamma=0.1,
+        ),
     )
-
-    # ModelBatch training
-    print("\n" + "=" * 60)
-    batch_models = [copy.deepcopy(models[i]) for i in range(num_models)]
-    batch_time, model_batch = train_modelbatch(
-        batch_models, trainloader, num_epochs, learning_rates, device
-    )
-
-    # Performance comparison
-    speedup = sequential_time / batch_time
-
-    print("\nRESULTS")
-    print("-" * 30)
-    print(f"Sequential: {sequential_time:.2f}s")
-    print(f"ModelBatch: {batch_time:.2f}s")
-    print(f"Speedup: {speedup:.1f}x")
-
-    # Check the trained batched models.
-    batch_accuracies = evaluate_accuracy(model_batch, testloader, device, is_batch=True)
-    print(
-        "ModelBatch accuracy: "
-        f"mean={np.mean(batch_accuracies):.1f}%, "
-        f"range={min(batch_accuracies):.1f}-{max(batch_accuracies):.1f}%"
-    )
-
-    # Memory usage
-    if torch.cuda.is_available():
-        memory_used = torch.cuda.max_memory_allocated() / 1e9
-        memory_total = torch.cuda.get_device_properties(0).total_memory / 1e9
-        print(
-            f"GPU Memory: {memory_used:.2f}GB / {memory_total:.1f}GB ({memory_used / memory_total * 100:.1f}%)"
-        )
-        torch.cuda.reset_peak_memory_stats()
-
-    return {
-        "num_models": num_models,
-        "sequential_time": sequential_time,
-        "batch_time": batch_time,
-        "speedup": speedup,
-    }
-
-
-if __name__ == "__main__":
-    print("ModelBatch CIFAR10 LeNet Benchmark")
-
-    print(f"\n{'=' * 60}")
-    print("SCALABILITY STUDY")
-    print("=" * 60)
-
-    configs = [
-        {"num_models": 4, "num_epochs": 1},
-        {"num_models": 8, "num_epochs": 1},
-        {"num_models": 16, "num_epochs": 1},
-        {"num_models": 32, "num_epochs": 1},
-    ]
+    sequential_accuracy = evaluate_accuracy(
+        [sequential_model], testloader, device, is_batch=False
+    )[0]
+    print(f"Sequential accuracy: {sequential_accuracy:.1f}%")
 
     results = []
     for config in configs:
-        print(f"\nTesting {config['num_models']} models...")
-        result = run_benchmark(**config)
+        num_models = config["num_models"]
+        print(f"\nTesting {num_models} models...")
+        print("\n" + "=" * 60)
+
+        batch_models = [copy.deepcopy(models[i]) for i in range(num_models)]
+        batch_time, model_batch = train_modelbatch(
+            batch_models,
+            trainloader,
+            num_epochs,
+            device,
+            optimizer_cls=torch.optim.SGD,
+            optimizer_configs=[
+                {
+                    "lr": learning_rate,
+                    "momentum": 0.9,
+                    "weight_decay": 5e-4,
+                    "nesterov": True,
+                }
+                for _ in range(num_models)
+            ],
+            scheduler_factory=lambda optimizer: torch.optim.lr_scheduler.MultiStepLR(
+                optimizer,
+                milestones=[num_epochs * 3 // 5, num_epochs * 5 // 6],
+                gamma=0.1,
+            ),
+        )
+
+        sequential_time = sequential_time_per_model * num_models
+        speedup = sequential_time / batch_time
+
+        print("\nRESULTS")
+        print("-" * 30)
+        print(
+            f"Sequential: {sequential_time:.2f}s "
+            f"({sequential_time_per_model:.2f}s/model x {num_models})"
+        )
+        print(f"ModelBatch: {batch_time:.2f}s")
+        print(f"Speedup: {speedup:.1f}x")
+        print(f"Sequential accuracy: {sequential_accuracy:.1f}%")
+
+        # Check the trained batched models.
+        batch_accuracies = evaluate_accuracy(
+            model_batch, testloader, device, is_batch=True
+        )
+        best_accuracy = max(batch_accuracies)
+        print(
+            "ModelBatch accuracy: "
+            f"best={best_accuracy:.1f}%, "
+            f"mean={np.mean(batch_accuracies):.1f}%, "
+            f"range={min(batch_accuracies):.1f}-{max(batch_accuracies):.1f}%"
+        )
+
+        result = {
+            "num_models": num_models,
+            "sequential_time": sequential_time,
+            "batch_time": batch_time,
+            "speedup": speedup,
+            "sequential_accuracy": sequential_accuracy,
+            "best_batch_accuracy": best_accuracy,
+        }
         results.append(result)
-        print(f"{result['speedup']:.1f}x speedup")
+        print(f"{speedup:.1f}x speedup")
 
     # Summary
     print(f"\n{'=' * 60}")
     print("SUMMARY")
     print("-" * 60)
-    print(f"{'Models':<8} {'Speedup':<10}")
+    print(f"{'Models':<8} {'Speedup':<10} {'Best acc':<10}")
     print("-" * 30)
 
     for r in results:
-        print(f"{r['num_models']:<8} {r['speedup']:<10.1f}")
+        print(
+            f"{r['num_models']:<8} {r['speedup']:<10.1f} {r['best_batch_accuracy']:<10.1f}"
+        )
 
     print(f"\n{'=' * 60}")
     print("BENCHMARK COMPLETE!")

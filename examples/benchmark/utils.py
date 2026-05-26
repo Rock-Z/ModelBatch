@@ -88,47 +88,50 @@ def evaluate_accuracy(
     return accuracies
 
 
-def estimate_sequential_time(
+def train_single_model(
     model: torch.nn.Module,
     trainloader: DataLoader,
     num_epochs: int,
     learning_rate: float,
     device: torch.device,
-    *,
-    num_models: int,
+    optimizer_cls: type[torch.optim.Optimizer] = torch.optim.Adam,
+    optimizer_config: dict[str, Any] | None = None,
+    scheduler_factory: Any | None = None,
 ) -> float:
-    """Estimate sequential baseline by timing one representative model."""
-    print("Sequential Training (1 model, extrapolated)")
+    """Train one model sequentially and return its elapsed time."""
+    print("Sequential Training (1 model)")
     start_time = time.time()
 
     set_random_seeds()
     model.to(device).train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer_config = {"lr": learning_rate, **(optimizer_config or {})}
+    optimizer = optimizer_cls(model.parameters(), **optimizer_config)
+    scheduler = scheduler_factory(optimizer) if scheduler_factory else None
     for _epoch in range(num_epochs):
         for batch_inputs, batch_labels in trainloader:
-            inputs = batch_inputs.to(device)
-            labels = batch_labels.to(device)
-            optimizer.zero_grad()
+            inputs = batch_inputs.to(device, non_blocking=True)
+            labels = batch_labels.to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
             logits = model(inputs)
             loss = F.cross_entropy(logits, labels)
             loss.backward()
             optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
 
     single_model_time = time.time() - start_time
-    estimated_time = single_model_time * num_models
-    print(
-        f"Sequential time: {estimated_time:.2f}s "
-        f"(estimated from {single_model_time:.2f}s/model x {num_models})"
-    )
-    return estimated_time
+    print(f"Sequential time: {single_model_time:.2f}s")
+    return single_model_time
 
 
 def train_modelbatch(
     models: Sequence[torch.nn.Module],
     trainloader: DataLoader,
     num_epochs: int,
-    learning_rates: Sequence[float],
     device: torch.device,
+    optimizer_cls: type[torch.optim.Optimizer] = torch.optim.Adam,
+    optimizer_configs: Sequence[dict[str, Any]] = (),
+    scheduler_factory: Any | None = None,
 ) -> tuple[float, ModelBatch]:
     """Train models using ModelBatch (vectorized)."""
     print("ModelBatch Training")
@@ -140,21 +143,25 @@ def train_modelbatch(
         f"Total parameters: {param_info['total_params']:,} ({model_batch.num_models} models)"
     )
 
-    optimizer_factory = OptimizerFactory(torch.optim.Adam)
-    optimizer_configs = create_adam_configs(learning_rates)
-    optimizer = optimizer_factory.create_optimizer(model_batch, optimizer_configs)
+    optimizer_factory = OptimizerFactory(optimizer_cls)
+    if not optimizer_configs:
+        raise ValueError("optimizer_configs must contain one config per model")
+    optimizer = optimizer_factory.create_optimizer(model_batch, list(optimizer_configs))
+    scheduler = scheduler_factory(optimizer) if scheduler_factory else None
 
     start_time = time.time()
     for _epoch in range(num_epochs):
         model_batch.train()
         for batch_inputs, batch_labels in trainloader:
-            inputs = batch_inputs.to(device)
-            labels = batch_labels.to(device)
-            optimizer.zero_grad()
+            inputs = batch_inputs.to(device, non_blocking=True)
+            labels = batch_labels.to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
             logits = model_batch(inputs)
             loss = model_batch.compute_loss(logits, labels, F.cross_entropy)
             loss.backward()
             optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
 
     total_time = time.time() - start_time
     print(f"ModelBatch time: {total_time:.2f}s")

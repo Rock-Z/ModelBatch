@@ -1,12 +1,10 @@
-"""Grokking Benchmark: Train multiple small Transformers on modular addition."""
+"""Grokking Benchmark: Train multiple small Transformers on modular multiplication."""
 
 from __future__ import annotations
 
 import copy
-import math
 import random
 import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sized, cast
@@ -23,37 +21,41 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from utils import (
     set_random_seeds,
     evaluate_accuracy,
-    estimate_sequential_time,
+    create_adam_configs,
+    train_single_model,
     train_modelbatch,
 )
 
 
 @dataclass
-class ModularAdditionConfig:
+class ModularMultiplicationConfig:
     modulus: int = 97  # prime modulus commonly used in grokking demos
     sequence_length: int = 2  # two operands as tokens
-    num_train: int = 20_000
-    num_test: int = 5_000
+    test_fraction: float = 0.50
 
 
-class ModularAdditionDataset(Dataset):
-    """Generate pairs (a, b) with label (a + b) % p for a small algorithmic task."""
+class ModularMultiplicationDataset(Dataset):
+    """Generate pairs (a, b) with label (a * b) % p for a small algorithmic task."""
 
-    def __init__(self, *, config: ModularAdditionConfig, split: str = "train"):
+    def __init__(self, *, config: ModularMultiplicationConfig, split: str = "train"):
         assert split in {"train", "test"}
         self.p = config.modulus
         self.seq_len = config.sequence_length
-        size = config.num_train if split == "train" else config.num_test
+        values = torch.arange(self.p)
+        a, b = torch.meshgrid(values, values, indexing="ij")
+        all_inputs = torch.stack([a.reshape(-1), b.reshape(-1)], dim=1)
 
-        # Generate samples uniformly at random
-        rng = torch.Generator().manual_seed(3471 if split == "train" else 6235)
-        a = torch.randint(low=0, high=self.p, size=(size,), generator=rng)
-        b = torch.randint(low=0, high=self.p, size=(size,), generator=rng)
+        rng = torch.Generator().manual_seed(3471)
+        permutation = torch.randperm(all_inputs.shape[0], generator=rng)
+        num_test = round(config.test_fraction * all_inputs.shape[0])
+        test_indices = permutation[:num_test]
+        train_indices = permutation[num_test:]
+        indices = train_indices if split == "train" else test_indices
 
-        # Inputs are token ids with shape [size, seq_len]
-        self.inputs = torch.stack([a, b], dim=1)
+        # Inputs are token ids with shape [num_examples, seq_len]
+        self.inputs = all_inputs[indices]
         # Labels are integers in [0, p)
-        self.labels = (a + b) % self.p
+        self.labels = (self.inputs[:, 0] * self.inputs[:, 1]) % self.p
 
     def __len__(self) -> int:  # type: ignore[override]
         return self.inputs.shape[0]
@@ -207,16 +209,15 @@ def load_grokking_data(
     *,
     batch_size: int = 256,
     modulus: int = 97,
-    num_train: int = 20_000,
-    num_test: int = 5_000,
+    test_fraction: float = 0.50,
 ) -> tuple[DataLoader, DataLoader]:
-    """Build DataLoaders for the modular addition task."""
+    """Build DataLoaders for the modular multiplication task."""
 
-    config = ModularAdditionConfig(
-        modulus=modulus, sequence_length=2, num_train=num_train, num_test=num_test
+    config = ModularMultiplicationConfig(
+        modulus=modulus, sequence_length=2, test_fraction=test_fraction
     )
-    train_ds = ModularAdditionDataset(config=config, split="train")
-    test_ds = ModularAdditionDataset(config=config, split="test")
+    train_ds = ModularMultiplicationDataset(config=config, split="train")
+    test_ds = ModularMultiplicationDataset(config=config, split="test")
 
     def seed_worker(_worker_id):
         worker_seed = torch.initial_seed() % 2**32
@@ -240,19 +241,24 @@ def load_grokking_data(
     return train_loader, test_loader
 
 
-def run_benchmark(
-    *,
-    num_models: int = 16,
-    num_epochs: int = 5,
-    batch_size: int = 256,
-    modulus: int = 97,
-    num_train: int = 20_000,
-    num_test: int = 5_000,
-) -> dict[str, float]:
-    """Run modular addition (grokking) benchmark with sequential vs ModelBatch training."""
+if __name__ == "__main__":
+    print("ModelBatch Grokking Transformer Benchmark")
 
-    print(f"Grokking Transformer Benchmark: {num_models} Models")
+    print(f"\n{'=' * 60}")
+    print("SCALABILITY STUDY")
     print("=" * 60)
+
+    configs = [
+        {"num_models": 4},
+        {"num_models": 8},
+        {"num_models": 16},
+        {"num_models": 32},
+    ]
+    num_epochs = 1000
+    batch_size = 256
+    modulus = 97
+    test_fraction = 0.50
+    max_num_models = max(config["num_models"] for config in configs)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -263,18 +269,20 @@ def run_benchmark(
     trainloader, testloader = load_grokking_data(
         batch_size=batch_size,
         modulus=modulus,
-        num_train=num_train,
-        num_test=num_test,
+        test_fraction=test_fraction,
     )
     train_ds = cast(Sized, trainloader.dataset)
     test_ds = cast(Sized, testloader.dataset)
     print(f"Training samples: {len(train_ds)}, Test samples: {len(test_ds)}")
 
-    # Hyperparameter variations across models
-    dropout_rates = [0.1 + 0.02 * i for i in range(num_models)]
-    learning_rates = [0.001 * (0.5**i) for i in range(num_models)]
+    # Stable grokking recipe for this GPT-like modular multiplication task.
+    dropout_choices = [0.10, 0.00, 0.05, 0.15]
+    dropout_rates = [
+        dropout_choices[i % len(dropout_choices)] for i in range(max_num_models)
+    ]
+    learning_rate = 1e-3
     print(f"Dropout range: {min(dropout_rates):.3f}-{max(dropout_rates):.3f}")
-    print(f"Learning rate range: {min(learning_rates):.6f}-{max(learning_rates):.6f}")
+    print(f"Learning rate: {learning_rate:.6f}")
 
     # Models
     set_random_seeds()
@@ -287,90 +295,89 @@ def run_benchmark(
             dropout_rate=dropout_rates[i],
             max_seq_len=2,
         )
-        for i in range(num_models)
+        for i in range(max_num_models)
     ]
     sample_params = sum(p.numel() for p in models[0].parameters())
     print(f"Parameters per model: {sample_params:,}")
 
-    # Sequential baseline
+    # Sequential baseline, trained once.
     print("\n" + "=" * 60)
     sequential_model = copy.deepcopy(models[0])
-    sequential_time = estimate_sequential_time(
+    sequential_time_per_model = train_single_model(
         sequential_model,
         trainloader,
         num_epochs,
-        learning_rates[0],
+        learning_rate,
         device,
-        num_models=num_models,
     )
-
-    # ModelBatch training
-    print("\n" + "=" * 60)
-    batch_models = [copy.deepcopy(models[i]) for i in range(num_models)]
-    batch_time, model_batch = train_modelbatch(
-        batch_models, trainloader, num_epochs, learning_rates, device
-    )
-
-    # Results
-    speedup = sequential_time / max(batch_time, 1e-8)
-    print("\nRESULTS")
-    print("-" * 30)
-    print(f"Sequential: {sequential_time:.2f}s")
-    print(f"ModelBatch: {batch_time:.2f}s")
-    print(f"Speedup: {speedup:.1f}x")
-
-    # Check the trained batched models.
-    batch_accuracies = evaluate_accuracy(model_batch, testloader, device, is_batch=True)
-    print(
-        "ModelBatch accuracy: "
-        f"mean={np.mean(batch_accuracies):.1f}%, "
-        f"range={min(batch_accuracies):.1f}-{max(batch_accuracies):.1f}%"
-    )
-
-    # GPU memory (if any)
-    if torch.cuda.is_available():
-        memory_used = torch.cuda.max_memory_allocated() / 1e9
-        memory_total = torch.cuda.get_device_properties(0).total_memory / 1e9
-        print(
-            f"GPU Memory: {memory_used:.2f}GB / {memory_total:.1f}GB ({memory_used / memory_total * 100:.1f}%)"
-        )
-        torch.cuda.reset_peak_memory_stats()
-
-    return {
-        "num_models": num_models,
-        "sequential_time": sequential_time,
-        "batch_time": batch_time,
-        "speedup": speedup,
-    }
-
-
-if __name__ == "__main__":
-    print("ModelBatch Grokking Transformer Benchmark")
-
-    print(f"\n{'=' * 60}")
-    print("SCALABILITY STUDY")
-    print("=" * 60)
-
-    configs = [
-        {"num_models": 4, "num_epochs": 1},
-        {"num_models": 8, "num_epochs": 1},
-        {"num_models": 16, "num_epochs": 1},
-        {"num_models": 32, "num_epochs": 1},
-    ]
+    sequential_train_accuracy = evaluate_accuracy(
+        [sequential_model], trainloader, device, is_batch=False
+    )[0]
+    sequential_test_accuracy = evaluate_accuracy(
+        [sequential_model], testloader, device, is_batch=False
+    )[0]
+    print(f"Sequential train accuracy: {sequential_train_accuracy:.1f}%")
+    print(f"Sequential test accuracy: {sequential_test_accuracy:.1f}%")
 
     results = []
     for config in configs:
-        print(f"\nTesting {config['num_models']} models...")
-        result = run_benchmark(**config)
+        num_models = config["num_models"]
+        print(f"\nTesting {num_models} models...")
+        print("\n" + "=" * 60)
+
+        batch_models = [copy.deepcopy(models[i]) for i in range(num_models)]
+        batch_time, model_batch = train_modelbatch(
+            batch_models,
+            trainloader,
+            num_epochs,
+            device,
+            optimizer_configs=create_adam_configs([learning_rate] * num_models),
+        )
+
+        sequential_time = sequential_time_per_model * num_models
+        speedup = sequential_time / max(batch_time, 1e-8)
+        print("\nRESULTS")
+        print("-" * 30)
+        print(
+            f"Sequential: {sequential_time:.2f}s "
+            f"({sequential_time_per_model:.2f}s/model x {num_models})"
+        )
+        print(f"ModelBatch: {batch_time:.2f}s")
+        print(f"Speedup: {speedup:.1f}x")
+        print(f"Sequential test accuracy: {sequential_test_accuracy:.1f}%")
+
+        # Check the trained batched models.
+        batch_accuracies = evaluate_accuracy(
+            model_batch, testloader, device, is_batch=True
+        )
+        best_accuracy = max(batch_accuracies)
+        print(
+            "ModelBatch accuracy: "
+            f"best={best_accuracy:.1f}%, "
+            f"mean={np.mean(batch_accuracies):.1f}%, "
+            f"range={min(batch_accuracies):.1f}-{max(batch_accuracies):.1f}%"
+        )
+
+        result = {
+            "num_models": num_models,
+            "sequential_time": sequential_time,
+            "batch_time": batch_time,
+            "speedup": speedup,
+            "sequential_test_accuracy": sequential_test_accuracy,
+            "best_batch_accuracy": best_accuracy,
+        }
         results.append(result)
-        print(f"{result['speedup']:.1f}x speedup")
+        print(f"{speedup:.1f}x speedup")
 
     print(f"\n{'=' * 60}")
     print("SUMMARY")
     print("-" * 60)
-    print(f"{'Models':<8} {'Speedup':<10}")
+    print(f"{'Models':<8} {'Speedup':<10} {'Seq acc':<10} {'Best acc':<10}")
     print("-" * 30)
     for r in results:
-        print(f"{r['num_models']:<8} {r['speedup']:<10.1f}")
+        print(
+            f"{r['num_models']:<8} {r['speedup']:<10.1f} "
+            f"{r['sequential_test_accuracy']:<10.1f} {r['best_batch_accuracy']:<10.1f}"
+        )
     print(f"\n{'=' * 60}")
     print("BENCHMARK COMPLETE!")

@@ -348,48 +348,51 @@ def evaluate_token_accuracy(
     return accuracies
 
 
-def estimate_sequential_token_probe_time(
-    model: BERTTokenLevelProbe,
+def train_sequential_token_probes(
+    models: list[BERTTokenLevelProbe],
     bert_extractor: BERTFeatureExtractor,
     train_loader: DataLoader,
-    target_layer: int,
-    learning_rate: float,
+    target_layers: list[int],
+    learning_rates: list[float],
     num_epochs: int,
     device: torch.device,
-    *,
-    num_probes: int,
-) -> float:
-    """Estimate sequential baseline by timing one representative token probe."""
-    print("Sequential Token-Level Training (1 probe, extrapolated)")
-    start_time = time.time()
+) -> tuple[list[float], list[BERTTokenLevelProbe]]:
+    """Train token-level probes sequentially for each target layer."""
+    print("Sequential Token-Level Training")
+    probe_times = []
 
-    set_random_seeds()
-    model.to(device).train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    for model, target_layer, learning_rate in zip(
+        models, target_layers, learning_rates
+    ):
+        start_time = time.time()
+        set_random_seeds()
+        model.to(device).train()
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    for _epoch in range(num_epochs):
-        for batch in train_loader:
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            labels = batch["labels"].to(device)
+        for _epoch in range(num_epochs):
+            for batch in train_loader:
+                input_ids = batch["input_ids"].to(device)
+                attention_mask = batch["attention_mask"].to(device)
+                labels = batch["labels"].to(device)
 
-            optimizer.zero_grad()
-            with torch.no_grad():
-                features = bert_extractor(input_ids, attention_mask)[target_layer]
-            logits = model(features)
-            loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-100
-            )
-            loss.backward()
-            optimizer.step()
+                optimizer.zero_grad()
+                with torch.no_grad():
+                    features = bert_extractor(input_ids, attention_mask)[target_layer]
+                logits = model(features)
+                loss = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)),
+                    labels.view(-1),
+                    ignore_index=-100,
+                )
+                loss.backward()
+                optimizer.step()
 
-    single_probe_time = time.time() - start_time
-    estimated_time = single_probe_time * num_probes
-    print(
-        f"Sequential time: {estimated_time:.2f}s "
-        f"(estimated from {single_probe_time:.2f}s/probe x {num_probes})"
-    )
-    return estimated_time
+        probe_time = time.time() - start_time
+        probe_times.append(probe_time)
+        print(f"Layer {target_layer} sequential time: {probe_time:.2f}s")
+
+    print(f"Sequential total time: {sum(probe_times):.2f}s")
+    return probe_times, models
 
 
 def train_modelbatch_token_probes(
@@ -478,15 +481,23 @@ def train_modelbatch_token_probes(
     return total_time, model_batch
 
 
-def run_benchmark(
-    num_layers: int = 6,
-    num_epochs: int = 3,
-    batch_size: int = 16,
-    max_length: int = 128,
-) -> dict[str, float]:
-    """Run BERT token-level POS probing benchmark."""
-    print(f"BERT Token-Level POS Benchmark: {num_layers} Layer Probes")
+if __name__ == "__main__":
+    print("ModelBatch BERT Token-Level POS Benchmark")
+
+    print(f"\n{'=' * 60}")
+    print("SCALABILITY STUDY")
     print("=" * 60)
+
+    configs = [
+        {"num_layers": 3},
+        {"num_layers": 6},
+        {"num_layers": 9},
+        {"num_layers": 12},
+    ]
+    num_epochs = 2
+    batch_size = 16
+    max_length = 128
+    max_num_layers = max(config["num_layers"] for config in configs)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -498,93 +509,95 @@ def run_benchmark(
     bert_extractor = BERTFeatureExtractor().to(device)
 
     # Create probe models for different layers
-    target_layers = list(range(1, min(num_layers + 1, bert_extractor.num_layers + 1)))
-    learning_rates = [1e-3 * (0.8**i) for i in range(len(target_layers))]
-    dropout_rates = [0.1 + 0.02 * i for i in range(len(target_layers))]
+    target_layers_all = list(
+        range(1, min(max_num_layers + 1, bert_extractor.num_layers + 1))
+    )
+    learning_rates = [1e-3 * (0.8**i) for i in range(len(target_layers_all))]
+    dropout_rates = [0.1 + 0.02 * i for i in range(len(target_layers_all))]
 
     set_random_seeds()
     models = [
         BERTTokenLevelProbe(
             target_layer=layer, num_pos_tags=num_pos_tags, dropout_rate=dropout_rates[i]
         )
-        for i, layer in enumerate(target_layers)
+        for i, layer in enumerate(target_layers_all)
     ]
     sample_params = sum(p.numel() for p in models[0].parameters())
     print(f"Parameters per probe: {sample_params:,}")
 
-    # Sequential baseline
+    # Sequential baseline: train each layer probe separately.
     print("\n" + "=" * 60)
-    sequential_probe = copy.deepcopy(models[0])
-    sequential_time = estimate_sequential_token_probe_time(
-        sequential_probe,
+    sequential_models = [copy.deepcopy(models[i]) for i in range(len(target_layers_all))]
+    sequential_times, sequential_models = train_sequential_token_probes(
+        sequential_models,
         bert_extractor,
         train_loader,
-        target_layers[0],
-        learning_rates[0],
-        num_epochs,
-        device,
-        num_probes=len(target_layers),
-    )
-
-    # ModelBatch training
-    print("\n" + "=" * 60)
-    batch_models = [copy.deepcopy(models[i]) for i in range(len(target_layers))]
-    batch_time, model_batch = train_modelbatch_token_probes(
-        batch_models,
-        bert_extractor,
-        train_loader,
-        target_layers,
+        target_layers_all,
         learning_rates,
         num_epochs,
         device,
     )
 
-    # Performance comparison
-    speedup = sequential_time / batch_time
-
-    print("\nRESULTS")
-    print("-" * 30)
-    print(f"Sequential: {sequential_time:.2f}s")
-    print(f"ModelBatch: {batch_time:.2f}s")
-    print(f"Speedup: {speedup:.1f}x")
-
-    # Check the trained batched probes.
-    batch_accuracies = evaluate_token_accuracy(
-        model_batch, bert_extractor, test_loader, target_layers, device, is_batch=True
-    )
-
-    print("\nLayer-wise ModelBatch Accuracies:")
-    for i, layer in enumerate(target_layers):
-        print(f"Layer {layer}: {batch_accuracies[i]:.1f}%")
-
-    return {
-        "num_layers": len(target_layers),
-        "sequential_time": sequential_time,
-        "batch_time": batch_time,
-        "speedup": speedup,
-    }
-
-
-if __name__ == "__main__":
-    print("ModelBatch BERT Token-Level POS Benchmark")
-
-    print(f"\n{'=' * 60}")
-    print("SCALABILITY STUDY")
-    print("=" * 60)
-
-    configs = [
-        {"num_layers": 3, "num_epochs": 2},
-        {"num_layers": 6, "num_epochs": 2},
-        {"num_layers": 9, "num_epochs": 2},
-        {"num_layers": 12, "num_epochs": 2},
-    ]
-
     results = []
     for config in configs:
-        print(f"\nTesting {config['num_layers']} layer probes...")
-        result = run_benchmark(**config)
+        target_layers = target_layers_all[: config["num_layers"]]
+        num_layers = len(target_layers)
+        print(f"\nTesting {num_layers} layer probes...")
+        print("\n" + "=" * 60)
+
+        batch_models = [copy.deepcopy(models[i]) for i in range(num_layers)]
+        batch_time, model_batch = train_modelbatch_token_probes(
+            batch_models,
+            bert_extractor,
+            train_loader,
+            target_layers,
+            learning_rates[:num_layers],
+            num_epochs,
+            device,
+        )
+
+        sequential_time = sum(sequential_times[:num_layers])
+        speedup = sequential_time / batch_time
+
+        print("\nRESULTS")
+        print("-" * 30)
+        print(f"Sequential: {sequential_time:.2f}s")
+        print(f"ModelBatch: {batch_time:.2f}s")
+        print(f"Speedup: {speedup:.1f}x")
+
+        # Check the trained probes.
+        sequential_accuracies = evaluate_token_accuracy(
+            sequential_models[:num_layers],
+            bert_extractor,
+            test_loader,
+            target_layers,
+            device,
+        )
+        batch_accuracies = evaluate_token_accuracy(
+            model_batch,
+            bert_extractor,
+            test_loader,
+            target_layers,
+            device,
+            is_batch=True,
+        )
+
+        print("\nLayer-wise Accuracies:")
+        print(f"{'Layer':<8} {'Sequential':<12} {'ModelBatch':<12}")
+        for i, layer in enumerate(target_layers):
+            print(
+                f"{layer:<8} {sequential_accuracies[i]:<12.1f} "
+                f"{batch_accuracies[i]:<12.1f}"
+            )
+
+        result = {
+            "num_layers": num_layers,
+            "sequential_time": sequential_time,
+            "batch_time": batch_time,
+            "speedup": speedup,
+        }
         results.append(result)
-        print(f"{result['speedup']:.1f}x speedup")
+        print(f"{speedup:.1f}x speedup")
 
     # Summary
     print(f"\n{'=' * 60}")
