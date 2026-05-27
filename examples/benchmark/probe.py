@@ -129,18 +129,8 @@ def load_ud_pos_data(  # noqa: PLR0915
         max_pos_tag = -1
 
         for example in split_data:
-            tokens = None
-            pos_tags = None
-
-            # Try different field names for tokens
-            for field in ["tokens", "words", "text", "sentence"]:
-                if tokens := example.get(field):
-                    break
-
-            # Try different field names for POS tags
-            for field in ["pos_tags", "upos", "tags", "pos", "labels", "ner_tags"]:
-                if pos_tags := example.get(field):
-                    break
+            tokens = example["words"]
+            pos_tags = example["labels"]
 
             if tokens and pos_tags and len(tokens) == len(pos_tags):
                 sentences.append(tokens)
@@ -164,30 +154,12 @@ def load_ud_pos_data(  # noqa: PLR0915
         train_pos_tags,
         train_max_pos_tag,
     ) = extract_split(dataset["train"])
-    try:
-        (
-            test_sentences,
-            test_pos_sequences,
-            test_pos_tags,
-            test_max_pos_tag,
-        ) = extract_split(dataset["test"])
-    except KeyError:
-        # Use validation or split train data
-        if "validation" in dataset:
-            (
-                test_sentences,
-                test_pos_sequences,
-                test_pos_tags,
-                test_max_pos_tag,
-            ) = extract_split(dataset["validation"])
-        else:
-            split_idx = len(train_sentences) // 5
-            test_sentences = train_sentences[-split_idx:]
-            test_pos_sequences = train_pos_sequences[-split_idx:]
-            train_sentences = train_sentences[:-split_idx]
-            train_pos_sequences = train_pos_sequences[:-split_idx]
-            test_pos_tags = set()
-            test_max_pos_tag = -1
+    (
+        test_sentences,
+        test_pos_sequences,
+        test_pos_tags,
+        test_max_pos_tag,
+    ) = extract_split(dataset["test"])
 
     all_pos_tags = train_pos_tags | test_pos_tags
     if all_pos_tags:
